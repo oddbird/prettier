@@ -17,8 +17,8 @@ function clean(original, cloned, parent) {
   }
 
   if (
-    original.type === "css-comment" &&
-    parent.type === "css-root" &&
+    original.type === "comment" &&
+    parent.type === "root" &&
     parent.nodes.length > 0
   ) {
     // --insert-pragma
@@ -41,13 +41,9 @@ function clean(original, cloned, parent) {
     }
 
     // Last comment is not parsed, when omitting semicolon, #8675
-    if (parent.type === "css-root" && parent.nodes.at(-1) === original) {
+    if (parent.type === "root" && parent.nodes.at(-1) === original) {
       return null;
     }
-  }
-
-  if (original.type === "value-root") {
-    delete cloned.text;
   }
 
   if (
@@ -58,7 +54,7 @@ function clean(original, cloned, parent) {
     delete cloned.value;
   }
 
-  if (original.type === "css-rule") {
+  if (original.type === "rule") {
     delete cloned.params;
   }
 
@@ -73,7 +69,7 @@ function clean(original, cloned, parent) {
       original.type === "selector-string" ||
       original.type === "selector-class" ||
       original.type === "selector-combinator" ||
-      original.type === "value-string") &&
+      original.type === "string") &&
     original.value
   ) {
     cloned.value = cleanCSSStrings(original.value);
@@ -99,16 +95,16 @@ function clean(original, cloned, parent) {
   ) {
     cloned.value = cloned.value.toLowerCase();
   }
-  if (original.type === "css-decl") {
+  if (original.type === "decl") {
     cloned.prop = original.prop.toLowerCase();
   }
-  if (original.type === "css-atrule" || original.type === "css-import") {
+  if (original.type === "atrule" || original.type === "import") {
     cloned.name = original.name.toLowerCase();
   }
-  if (original.type === "value-number") {
+  if (original.type === "number") {
     cloned.unit = original.unit.toLowerCase();
   }
-  if (original.type === "value-unknown") {
+  if (original.type === "unknown") {
     cloned.value = cloned.value.replaceAll(/;$/gu, "");
   }
 
@@ -128,7 +124,7 @@ function clean(original, cloned, parent) {
   if (
     (original.type === "media-value" ||
       original.type === "media-type" ||
-      original.type === "value-number" ||
+      original.type === "number" ||
       original.type === "selector-root-invalid" ||
       original.type === "selector-class" ||
       original.type === "selector-combinator" ||
@@ -153,12 +149,12 @@ function clean(original, cloned, parent) {
   }
 
   // Workaround when `postcss-values-parser` parse `not`, `and` or `or` keywords as `value-func`
-  if (
-    original.type === "css-atrule" &&
-    original.name.toLowerCase() === "supports"
-  ) {
-    delete cloned.value;
-  }
+  // if (
+  //   original.type === "css-atrule" &&
+  //   original.name.toLowerCase() === "supports"
+  // ) {
+  //   delete cloned.value;
+  // }
 
   // Workaround for SCSS nested properties
   if (original.type === "selector-unknown") {

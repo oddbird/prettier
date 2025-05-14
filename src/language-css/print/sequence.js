@@ -9,7 +9,7 @@ function printSequence(path, options, print) {
   path.each(() => {
     const { node, previous } = path;
     if (
-      previous?.type === "css-comment" &&
+      previous?.type === "comment" &&
       previous.text.trim() === "prettier-ignore"
     ) {
       parts.push(options.originalText.slice(locStart(node), locEnd(node)));
@@ -23,14 +23,14 @@ function printSequence(path, options, print) {
 
     const { next } = path;
     if (
-      (next.type === "css-comment" &&
+      (next.type === "comment" &&
         !hasNewline(options.originalText, locStart(next), {
           backwards: true,
         }) &&
         !isFrontMatter(node)) ||
-      (next.type === "css-atrule" &&
+      (next.type === "atrule" &&
         next.name === "else" &&
-        node.type !== "css-comment")
+        node.type !== "comment")
     ) {
       parts.push(" ");
     } else {

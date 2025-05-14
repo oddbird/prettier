@@ -192,4 +192,4 @@ function chunk(array, size) {
   return result;
 }
 
-export { printParenthesizedValueGroup, shouldBreakList };
+export { chunk, printParenthesizedValueGroup, shouldBreakList };
