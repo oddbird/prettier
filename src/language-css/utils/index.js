@@ -27,9 +27,7 @@ const colorAdjusterFunctions = new Set([
 ]);
 
 function getPropOfDeclNode(path) {
-  return path
-    .findAncestor((node) => node.type === "css-decl")
-    ?.prop?.toLowerCase();
+  return path.findAncestor((node) => node.type === "decl")?.prop?.toLowerCase();
 }
 
 const wideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
@@ -39,7 +37,7 @@ function isWideKeywords(value) {
 
 function isKeyframeAtRuleKeywords(path, value) {
   const atRuleAncestorNode = path.findAncestor(
-    (node) => node.type === "css-atrule",
+    (node) => node.type === "atrule",
   );
   return (
     atRuleAncestorNode?.name?.toLowerCase().endsWith("keyframes") &&
@@ -67,9 +65,7 @@ function insideValueFunctionNode(path, functionName) {
 }
 
 function insideICSSRuleNode(path) {
-  const ruleAncestorNode = path.findAncestor(
-    (node) => node.type === "css-rule",
-  );
+  const ruleAncestorNode = path.findAncestor((node) => node.type === "rule");
   const selector = ruleAncestorNode?.raws?.selector;
 
   return (
@@ -83,7 +79,7 @@ function insideAtRuleNode(path, atRuleNameOrAtRuleNames) {
     ? atRuleNameOrAtRuleNames
     : [atRuleNameOrAtRuleNames];
   const atRuleAncestorNode = path.findAncestor(
-    (node) => node.type === "css-atrule",
+    (node) => node.type === "atrule",
   );
 
   return (
@@ -97,7 +93,7 @@ function insideURLFunctionInImportAtRuleNode(path) {
   return (
     node.groups[0].value === "url" &&
     node.groups.length === 2 &&
-    path.findAncestor((node) => node.type === "css-atrule")?.name === "import"
+    path.findAncestor((node) => node.type === "atrule")?.name === "import"
   );
 }
 
@@ -185,7 +181,7 @@ function isRelationalOperatorNode(node) {
 function isSCSSControlDirectiveNode(node, options) {
   return (
     options.parser === "scss" &&
-    node.type === "css-atrule" &&
+    node.type === "atrule" &&
     ["if", "else", "for", "each", "while"].includes(node.name)
   );
 }
@@ -268,7 +264,7 @@ function isSCSSMapItemNode(path, options) {
     return false;
   }
 
-  const declNode = path.findAncestor((node) => node.type === "css-decl");
+  const declNode = path.findAncestor((node) => node.type === "decl");
 
   // SCSS map declaration (i.e. `$map: (key: value, other-key: other-value)`)
   if (declNode?.prop?.startsWith("$")) {
@@ -289,7 +285,7 @@ function isSCSSMapItemNode(path, options) {
 }
 
 function isInlineValueCommentNode(node) {
-  return node.type === "value-comment" && node.inline;
+  return node.type === "comment" && node.sassType === "sass-comment";
 }
 
 function isHashNode(node) {

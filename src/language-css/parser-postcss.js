@@ -1,6 +1,7 @@
 import postcssParse from "postcss/lib/parse";
 import postcssLess from "postcss-less";
-import postcssScssParse from "postcss-scss/lib/scss-parse";
+// import postcssScssParse from "postcss-scss/lib/scss-parse";
+import { scss as postcssScssParse } from "sass-parser";
 import createError from "../common/parser-create-error.js";
 import parseFrontMatter from "../utils/front-matter/parse.js";
 import {
@@ -9,12 +10,11 @@ import {
   locStart,
   replaceQuotesInInlineComments,
 } from "./loc.js";
-import parseMediaQuery from "./parse/parse-media-query.js";
+// import parseMediaQuery from "./parse/parse-media-query.js";
 import parseSelector from "./parse/parse-selector.js";
 import parseValue from "./parse/parse-value.js";
-import { addTypePrefix } from "./parse/utils.js";
 import { hasIgnorePragma, hasPragma } from "./pragma.js";
-import isModuleRuleName from "./utils/is-module-rule-name.js";
+// import isModuleRuleName from "./utils/is-module-rule-name.js";
 import isSCSSNestedPropertyNode from "./utils/is-scss-nested-property-node.js";
 
 const DEFAULT_SCSS_DIRECTIVE = /(\s*)(!default).*$/u;
@@ -37,7 +37,7 @@ function parseNestedCSS(node, options) {
 
     // Custom properties looks like declarations
     if (
-      node.type === "css-decl" &&
+      node.type === "decl" &&
       typeof node.prop === "string" &&
       node.prop.startsWith("--") &&
       typeof node.value === "string" &&
@@ -70,18 +70,18 @@ function parseNestedCSS(node, options) {
         } catch {
           // noop
         }
-        if (ast?.nodes?.length === 1 && ast.nodes[0].type === "css-rule") {
+        if (ast?.nodes?.length === 1 && ast.nodes[0].type === "rule") {
           rules = ast.nodes[0].nodes;
         }
       }
       if (rules) {
         node.value = {
-          type: "css-rule",
+          type: "rule",
           nodes: rules,
         };
       } else {
         node.value = {
-          type: "value-unknown",
+          type: "unknown",
           value: node.raws.value.raw,
         };
       }
@@ -102,7 +102,7 @@ function parseNestedCSS(node, options) {
       node.raws.selector = selector;
     }
 
-    let value = "";
+    let value = node.toString();
 
     if (typeof node.value === "string") {
       value = node.raws.value
@@ -112,6 +112,7 @@ function parseNestedCSS(node, options) {
       node.raws.value = value.trim();
     }
 
+    // TODO: ImportRule.params can't be overwritten.
     let params = "";
 
     if (typeof node.params === "string") {
@@ -151,10 +152,11 @@ function parseNestedCSS(node, options) {
 
       // Check on SCSS nested property
       if (isSCSSNestedPropertyNode(node, options)) {
-        node.isSCSSNesterProperty = true;
+        node.isSCSSNestedProperty = true;
       }
 
-      node.selector = parseSelector(selector);
+      // TODO: node.selector cannot be overwritten
+      node.selectorTemp = parseSelector(selector);
 
       return node;
     }
@@ -184,17 +186,18 @@ function parseNestedCSS(node, options) {
 
       if (value.startsWith("progid:")) {
         return {
-          type: "value-unknown",
+          type: "unknown",
           value,
         };
       }
 
-      node.value = parseValue(value, options);
+      // TODO: skipping value parsing
+      // parseValue(node, options);
     }
 
     if (
       options.parser === "less" &&
-      node.type === "css-decl" &&
+      node.type === "decl" &&
       value.startsWith("extend(")
     ) {
       // extend is missing
@@ -207,7 +210,7 @@ function parseNestedCSS(node, options) {
       }
     }
 
-    if (node.type === "css-atrule") {
+    if (node.type === "atrule") {
       if (options.parser === "less") {
         // mixin
         if (node.mixin) {
@@ -276,93 +279,93 @@ function parseNestedCSS(node, options) {
       }
     }
 
-    if (node.type === "css-atrule" && params.length > 0) {
-      const { name } = node;
-      const lowercasedName = node.name.toLowerCase();
+    // if (node.type === "atrule" && params.length > 0) {
+    //   const { name } = node;
+    //   const lowercasedName = node.name.toLowerCase();
 
-      if (name === "warn" || name === "error") {
-        node.params = {
-          type: "media-unknown",
-          value: params,
-        };
+    //   if (name === "warn" || name === "error") {
+    //     node.params = {
+    //       type: "media-unknown",
+    //       value: params,
+    //     };
 
-        return node;
-      }
+    //     return node;
+    //   }
 
-      if (name === "extend" || name === "nest") {
-        node.selector = parseSelector(params);
-        delete node.params;
+    //   if (name === "extend" || name === "nest") {
+    //     node.selector = parseSelector(params);
+    //     delete node.params;
 
-        return node;
-      }
+    //     return node;
+    //   }
 
-      if (name === "at-root") {
-        if (/^\(\s*(?:without|with)\s*:.+\)$/su.test(params)) {
-          node.params = parseValue(params, options);
-        } else {
-          node.selector = parseSelector(params);
-          delete node.params;
-        }
+    //   if (name === "at-root") {
+    //     if (/^\(\s*(?:without|with)\s*:.+\)$/su.test(params)) {
+    //       node.params = parseValue(params, options);
+    //     } else {
+    //       node.selector = parseSelector(params);
+    //       delete node.params;
+    //     }
 
-        return node;
-      }
+    //     return node;
+    //   }
 
-      if (isModuleRuleName(lowercasedName)) {
-        node.import = true;
-        delete node.filename;
-        node.params = parseValue(params, options);
-        return node;
-      }
+    //   if (isModuleRuleName(lowercasedName)) {
+    //     node.import = true;
+    //     delete node.filename;
+    //     node.params = parseValue(params, options);
+    //     return node;
+    //   }
 
-      if (
-        [
-          "namespace",
-          "supports",
-          "if",
-          "else",
-          "for",
-          "each",
-          "while",
-          "debug",
-          "mixin",
-          "include",
-          "function",
-          "return",
-          "define-mixin",
-          "add-mixin",
-        ].includes(name)
-      ) {
-        // Remove unnecessary spaces in SCSS variable arguments
-        // Move spaces after the `...`, so we can keep the range correct
-        params = params.replace(/(\$\S+?)(\s+)?\.{3}/u, "$1...$2");
-        // Remove unnecessary spaces before SCSS control, mixin and function directives
-        // Move spaces after the `(`, so we can keep the range correct
-        params = params.replace(/^(?!if)(\S+)(\s+)\(/u, "$1($2");
+    //   if (
+    //     [
+    //       "namespace",
+    //       "supports",
+    //       "if",
+    //       "else",
+    //       "for",
+    //       "each",
+    //       "while",
+    //       "debug",
+    //       "mixin",
+    //       "include",
+    //       "function",
+    //       "return",
+    //       "define-mixin",
+    //       "add-mixin",
+    //     ].includes(name)
+    //   ) {
+    //     // Remove unnecessary spaces in SCSS variable arguments
+    //     // Move spaces after the `...`, so we can keep the range correct
+    //     params = params.replace(/(\$\S+?)(\s+)?\.{3}/u, "$1...$2");
+    //     // Remove unnecessary spaces before SCSS control, mixin and function directives
+    //     // Move spaces after the `(`, so we can keep the range correct
+    //     params = params.replace(/^(?!if)(\S+)(\s+)\(/u, "$1($2");
 
-        node.value = parseValue(params, options);
-        delete node.params;
+    //     node.value = parseValue(params, options);
+    //     delete node.params;
 
-        return node;
-      }
+    //     return node;
+    //   }
 
-      if (["media", "custom-media"].includes(lowercasedName)) {
-        if (params.includes("#{")) {
-          // Workaround for media at rule with scss interpolation
-          return {
-            type: "media-unknown",
-            value: params,
-          };
-        }
+    //   if (["media", "custom-media"].includes(lowercasedName)) {
+    //     if (params.includes("#{")) {
+    //       // Workaround for media at rule with scss interpolation
+    //       return {
+    //         type: "media-unknown",
+    //         value: params,
+    //       };
+    //     }
 
-        node.params = parseMediaQuery(params);
+    //     node.params = parseMediaQuery(params);
 
-        return node;
-      }
+    //     return node;
+    //   }
 
-      node.params = params;
+    //   node.params = params;
 
-      return node;
-    }
+    //   return node;
+    // }
   }
 
   return node;
@@ -394,7 +397,7 @@ function parseWithParser(parse, text, options) {
   }
 
   options.originalText = text;
-  result = parseNestedCSS(addTypePrefix(result, "css-"), options);
+  result = parseNestedCSS(result, options);
 
   calculateLoc(result, text);
 
@@ -424,7 +427,12 @@ function parseLess(text, options = {}) {
 }
 
 function parseScss(text, options = {}) {
-  return parseWithParser(postcssScssParse, text, options);
+  return parseWithParser(
+    (text, opts) => postcssScssParse.parse(text, opts),
+    text,
+    options,
+  );
+  // return parseWithParser(postcssScssParse, text, options);
 }
 
 const postCssParser = {

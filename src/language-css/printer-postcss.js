@@ -1,6 +1,7 @@
 import {
   breakParent,
   dedent,
+  fill,
   group,
   hardline,
   ifBreak,
@@ -10,6 +11,7 @@ import {
   softline,
 } from "../document/builders.js";
 import { removeLines } from "../document/utils.js";
+import { assertDocArray } from "../document/utils/assert-doc.js";
 import isNonEmptyArray from "../utils/is-non-empty-array.js";
 import printString from "../utils/print-string.js";
 import UnexpectedNodeError from "../utils/unexpected-node-error.js";
@@ -18,7 +20,6 @@ import embed from "./embed.js";
 import getVisitorKeys from "./get-visitor-keys.js";
 import { locEnd, locStart } from "./loc.js";
 import { insertPragma } from "./pragma.js";
-import printCommaSeparatedValueGroup from "./print/comma-separated-value-group.js";
 import {
   adjustNumbers,
   adjustStrings,
@@ -26,24 +27,21 @@ import {
   printUnit,
   quoteAttributeValue,
 } from "./print/misc.js";
-import {
-  printParenthesizedValueGroup,
-  shouldBreakList,
-} from "./print/parenthesized-value-group.js";
+import { chunk, shouldBreakList } from "./print/parenthesized-value-group.js";
 import printSequence from "./print/sequence.js";
 import {
   hasComposesNode,
   hasParensAroundNode,
   insideAtRuleNode,
   insideICSSRuleNode,
-  insideValueFunctionNode,
   isDetachedRulesetCallNode,
   isDetachedRulesetDeclarationNode,
+  isInlineValueCommentNode,
   isKeyframeAtRuleKeywords,
-  isMediaAndSupportsKeywords,
   isSCSSControlDirectiveNode,
   isTemplatePlaceholderNode,
   isTemplatePropNode,
+  isURLFunctionNode,
   isWideKeywords,
   lastLineHasInlineComment,
   maybeToLowerCase,
@@ -52,12 +50,13 @@ import {
 function genericPrint(path, options, print) {
   const { node } = path;
 
-  switch (node.type) {
+  // TODO: Do we want to *just* check for `sassType`?
+  switch (node.type ?? node.sassType) {
     case "front-matter":
       return [node.raw, hardline];
-    case "css-root": {
+    case "root": {
       const nodes = printSequence(path, options, print);
-      let after = node.raws.after.trim();
+      let after = node.raws.after?.trim() ?? "";
       if (after.startsWith(";")) {
         after = after.slice(1).trim();
       }
@@ -69,23 +68,21 @@ function genericPrint(path, options, print) {
         node.nodes.length > 0 ? hardline : "",
       ];
     }
-    case "css-comment": {
-      const isInlineComment = node.inline || node.raws.inline;
-
+    case "comment": {
       const text = options.originalText.slice(locStart(node), locEnd(node));
 
-      return isInlineComment ? text.trimEnd() : text;
+      return isInlineValueCommentNode(node) ? text.trimEnd() : text;
     }
-    case "css-rule":
+    case "rule":
       return [
-        print("selector"),
+        print("selectorTemp"),
         node.important ? " !important" : "",
         node.nodes
           ? [
-              node.selector?.type === "selector-unknown" &&
-              lastLineHasInlineComment(node.selector.value)
+              node.selectorTemp?.type === "selector-unknown" &&
+              lastLineHasInlineComment(node.selectorTemp.value)
                 ? line
-                : node.selector
+                : node.selectorTemp
                   ? " "
                   : "",
               "{",
@@ -99,18 +96,18 @@ function genericPrint(path, options, print) {
           : ";",
       ];
 
-    case "css-decl": {
+    case "decl": {
       const parentNode = path.parent;
-
       const { between: rawBetween } = node.raws;
-      const trimmedBetween = rawBetween.trim();
+      const trimmedBetween = rawBetween?.trim() ?? ":";
       const isColon = trimmedBetween === ":";
+      let value = node.expression ? print("expression") : node.value;
       const isValueAllSpace =
-        typeof node.value === "string" && /^ *$/u.test(node.value);
-      let value = typeof node.value === "string" ? node.value : print("value");
+        typeof node.value === "string" && /^ *$/u.test(value);
 
       value = hasComposesNode(node) ? removeLines(value) : value;
 
+      // TODO: Haven't checked this path yet
       if (
         !isColon &&
         lastLineHasInlineComment(trimmedBetween) &&
@@ -123,24 +120,25 @@ function genericPrint(path, options, print) {
       }
 
       return [
-        node.raws.before.replaceAll(/[\s;]/gu, ""),
+        node.raws.before?.replaceAll(/[\s;]/gu, "") ?? "",
         // Less variable
-        (parentNode.type === "css-atrule" && parentNode.variable) ||
+        (parentNode.type === "atrule" && parentNode.variable) ||
         insideICSSRuleNode(path)
           ? node.prop
           : maybeToLowerCase(node.prop),
         trimmedBetween.startsWith("//") ? " " : "",
         trimmedBetween,
         node.extend || isValueAllSpace ? "" : " ",
-        options.parser === "less" && node.extend && node.selector
-          ? ["extend(", print("selector"), ")"]
+        options.parser === "less" && node.extend && node.selectorTemp
+          ? ["extend(", print("selectorTemp"), ")"]
           : "",
         value,
-        node.raws.important
-          ? node.raws.important.replace(/\s*!\s*important/iu, " !important")
-          : node.important
-            ? " !important"
-            : "",
+        // TODO: using `node.important` throws an error, not yet implemented
+        // node.raws.important
+        //   ? node.raws.important.replace(/\s*!\s*important/iu, " !important")
+        //   : node.important
+        //     ? " !important"
+        //     : "",
         node.raws.scssDefault
           ? node.raws.scssDefault.replace(/\s*!default/iu, " !default")
           : node.scssDefault
@@ -167,7 +165,7 @@ function genericPrint(path, options, print) {
               : ";",
       ];
     }
-    case "css-atrule": {
+    case "atrule": {
       const parentNode = path.parent;
       const isTemplatePlaceholderNodeWithoutSemiColon =
         isTemplatePlaceholderNode(node) &&
@@ -177,7 +175,7 @@ function genericPrint(path, options, print) {
       if (options.parser === "less") {
         if (node.mixin) {
           return [
-            print("selector"),
+            print("selectorTemp"),
             node.important ? " !important" : "",
             isTemplatePlaceholderNodeWithoutSemiColon ? "" : ";",
           ];
@@ -215,7 +213,7 @@ function genericPrint(path, options, print) {
       }
       const isImportUnknownValueEndsWithSemiColon =
         node.name === "import" &&
-        node.params?.type === "value-unknown" &&
+        node.params?.type === "unknown" &&
         node.params.value.endsWith(";");
 
       return [
@@ -246,7 +244,7 @@ function genericPrint(path, options, print) {
               typeof node.params === "string" ? node.params : print("params"),
             ]
           : "",
-        node.selector ? indent([" ", print("selector")]) : "",
+        node.selectorTemp ? indent([" ", print("selectorTemp")]) : "",
         node.value
           ? group([
               " ",
@@ -264,11 +262,11 @@ function genericPrint(path, options, print) {
           ? [
               isSCSSControlDirectiveNode(node, options)
                 ? ""
-                : (node.selector &&
-                      !node.selector.nodes &&
-                      typeof node.selector.value === "string" &&
-                      lastLineHasInlineComment(node.selector.value)) ||
-                    (!node.selector &&
+                : (node.selectorTemp &&
+                      !node.selectorTemp.nodes &&
+                      typeof node.selectorTemp.value === "string" &&
+                      lastLineHasInlineComment(node.selectorTemp.value)) ||
+                    (!node.selectorTemp &&
                       typeof node.params === "string" &&
                       lastLineHasInlineComment(node.params))
                   ? line
@@ -341,7 +339,7 @@ function genericPrint(path, options, print) {
       return group([
         insideAtRuleNode(path, "custom-selector")
           ? [
-              path.findAncestor((node) => node.type === "css-atrule")
+              path.findAncestor((node) => node.type === "atrule")
                 .customSelector,
               line,
             ]
@@ -457,11 +455,11 @@ function genericPrint(path, options, print) {
 
     case "selector-unknown": {
       const ruleAncestorNode = path.findAncestor(
-        (node) => node.type === "css-rule",
+        (node) => node.type === "rule",
       );
 
       // Nested SCSS property
-      if (ruleAncestorNode?.isSCSSNesterProperty) {
+      if (ruleAncestorNode?.isSCSSNestedProperty) {
         return adjustNumbers(
           adjustStrings(maybeToLowerCase(node.value), options),
         );
@@ -469,9 +467,9 @@ function genericPrint(path, options, print) {
 
       // originalText has to be used for Less, see replaceQuotesInInlineComments in loc.js
       const parentNode = path.parent;
-      if (parentNode.raws?.selector) {
+      if (parentNode.raws?.selectorTemp) {
         const start = locStart(parentNode);
-        const end = start + parentNode.raws.selector.length;
+        const end = start + parentNode.raws.selectorTemp.length;
         return options.originalText.slice(start, end).trim();
       }
 
@@ -493,77 +491,155 @@ function genericPrint(path, options, print) {
 
       return node.value;
     }
+
     // postcss-values-parser
-    case "value-value":
-    case "value-root":
-      return print("group");
+    // case "value":
+    // case "root":
+    //   return print("group");
 
-    case "value-comment":
-      return options.originalText.slice(locStart(node), locEnd(node));
+    // case "comment":
+    //   return options.originalText.slice(locStart(node), locEnd(node));
 
-    case "value-comma_group":
-      return printCommaSeparatedValueGroup(path, options, print);
+    // case "comma_group":
+    //   return printCommaSeparatedValueGroup(path, options, print);
 
-    case "value-paren_group":
-      return printParenthesizedValueGroup(path, options, print);
+    // case "paren_group":
+    //   return printParenthesizedValueGroup(path, options, print);
 
-    case "value-func":
+    case "color":
+      return node.value.toString();
+
+    case "function-call":
+      return node.toString();
+
+    // case "func":
+    //   return [
+    //     node.value,
+    //     insideAtRuleNode(path, "supports") && isMediaAndSupportsKeywords(node)
+    //       ? " "
+    //       : "",
+    //     print("group"),
+    //   ];
+
+    case "list": {
+      // TODO: Every node needs a `type`
+      node.type = "list";
+      // TODO: Need a way to determine if this list is wrapped in parens
+      const hasParens = false;
+      const parentNode = path.parent;
+      const nodes = path.map(
+        ({ node }) => (typeof node === "string" ? node : print()),
+        "nodes",
+      );
+      // TODO: It looks like `url()` is just parsed as a `string`
+      if (
+        parentNode &&
+        isURLFunctionNode(parentNode) &&
+        (node.groups.length === 1 ||
+          (node.groups.length > 0 &&
+            node.groups[0].type === "value-comma_group" &&
+            node.groups[0].groups.length > 0 &&
+            node.groups[0].groups[0].type === "value-word" &&
+            node.groups[0].groups[0].value.startsWith("data:")))
+      ) {
+        return [hasParens ? "(" : "", join(",", nodes), hasParens ? ")" : ""];
+      }
+      if (!hasParens) {
+        const forceHardLine = path.match(
+          (node) =>
+            // TODO: The original `shouldBreakList()` checks for comma-groups
+            node.some((node) =>
+              ["list", "binary-operation"].includes(node.sassType),
+            ),
+          (node, key) =>
+            key === "expression" &&
+            ((node.type === "decl" && !node.prop.startsWith("--")) ||
+              (node.type === "atrule" && node.variable)),
+        );
+        assertDocArray(nodes);
+        const separator = (node.separator ?? "").trim();
+        const withSeparator = chunk(join(separator, nodes), 2);
+        const parts = join(forceHardLine ? hardline : line, withSeparator);
+        return indent(
+          forceHardLine
+            ? [hardline, parts]
+            : group([parentNode.type === "decl" ? softline : "", fill(parts)]),
+        );
+      }
+      // TODO: We're not handling the logic for a paren-wrapped list
+      return null;
+    }
+
+    // case "paren":
+    //   return node.value;
+
+    case "number":
       return [
-        node.value,
-        insideAtRuleNode(path, "supports") && isMediaAndSupportsKeywords(node)
-          ? " "
-          : "",
-        print("group"),
+        printCssNumber(node.value.toString()),
+        printUnit(node.unit ?? ""),
       ];
 
-    case "value-paren":
-      return node.value;
+    case "binary-operation":
+      node.type = "binary-operation";
+      return [print("left"), " ", node.operator, " ", print("right")];
 
-    case "value-number":
-      return [printCssNumber(node.value), printUnit(node.unit)];
+    case "parenthesized":
+      node.type = "parenthesized";
+      return group(["(", indent([softline, print("inParens")]), softline, ")"]);
 
-    case "value-operator":
-      return node.value;
+    case "selector-expr":
+    case "variable":
+      return node.toString();
 
-    case "value-word":
-      if ((node.isColor && node.isHex) || isWideKeywords(node.value)) {
-        return node.value.toLowerCase();
+    // case "word":
+    //   if ((node.isColor && node.isHex) || isWideKeywords(node.value)) {
+    //     return node.value.toLowerCase();
+    //   }
+
+    //   return node.value;
+
+    // case "colon": {
+    //   const { previous } = path;
+    //   return group([
+    //     node.value,
+    //     // Don't add spaces on escaped colon `:`, e.g: grid-template-rows: [row-1-00\:00] auto;
+    //     (typeof previous?.value === "string" &&
+    //       previous.value.endsWith("\\")) ||
+    //     // Don't add spaces on `:` in `url` function (i.e. `url(fbglyph: cross-outline, fig-white)`)
+    //     insideValueFunctionNode(path, "url")
+    //       ? ""
+    //       : line,
+    //   ]);
+    // }
+
+    case "string": {
+      const text = node.toString().trim();
+      if (node.quotes) {
+        return printString(text, options);
       }
-
-      return node.value;
-
-    case "value-colon": {
-      const { previous } = path;
-      return group([
-        node.value,
-        // Don't add spaces on escaped colon `:`, e.g: grid-template-rows: [row-1-00\:00] auto;
-        (typeof previous?.value === "string" &&
-          previous.value.endsWith("\\")) ||
-        // Don't add spaces on `:` in `url` function (i.e. `url(fbglyph: cross-outline, fig-white)`)
-        insideValueFunctionNode(path, "url")
-          ? ""
-          : line,
-      ]);
+      if (isWideKeywords(text)) {
+        return text.toLowerCase();
+      }
+      return text;
     }
-    case "value-string":
-      return printString(
-        node.raws.quote + node.value + node.raws.quote,
-        options,
-      );
 
-    case "value-atword":
-      return ["@", node.value];
+    // case "atword":
+    //   return ["@", node.value];
 
-    case "value-unicode-range":
-      return node.value;
+    // case "unicode-range":
+    //   return node.value;
 
-    case "value-unknown":
-      return node.value;
+    // case "unknown":
+    //   return node.value;
 
-    case "value-comma": // Handled in `value-comma_group`
+    // case "comma": // Handled in `value-comma_group`
     default:
       /* c8 ignore next */
-      throw new UnexpectedNodeError(node, "PostCSS");
+      throw new UnexpectedNodeError(
+        node,
+        "PostCSS",
+        node.type ? "type" : "sassType",
+      );
   }
 }
 

@@ -33,7 +33,7 @@ function calculateLocStart(node, text) {
 }
 
 function calculateLocEnd(node, text) {
-  if (node.type === "css-comment" && node.inline) {
+  if (node.type === "comment" && node.sassType === "sass-comment") {
     return skipEverythingButNewLine(text, node.source.startOffset);
   }
 
@@ -72,51 +72,8 @@ function calculateLoc(node, text) {
       continue;
     }
 
-    if (child.type === "value-root" || child.type === "value-unknown") {
-      calculateValueNodeLoc(
-        child,
-        getValueRootOffset(node),
-        child.text || child.value,
-      );
-    } else {
-      calculateLoc(child, text);
-    }
+    calculateLoc(child, text);
   }
-}
-
-function calculateValueNodeLoc(node, rootOffset, text) {
-  if (node.source) {
-    node.source.startOffset = calculateLocStart(node, text) + rootOffset;
-    node.source.endOffset = calculateLocEnd(node, text) + rootOffset;
-  }
-
-  for (const key in node) {
-    const child = node[key];
-
-    if (key === "source" || !child || typeof child !== "object") {
-      continue;
-    }
-
-    calculateValueNodeLoc(child, rootOffset, text);
-  }
-}
-
-function getValueRootOffset(node) {
-  let result = node.source.startOffset;
-  if (typeof node.prop === "string") {
-    result += node.prop.length;
-  }
-
-  if (node.type === "css-atrule" && typeof node.name === "string") {
-    result +=
-      1 + node.name.length + node.raws.afterName.match(/^\s*:?\s*/u)[0].length;
-  }
-
-  if (node.type !== "css-atrule" && typeof node.raws?.between === "string") {
-    result += node.raws.between.length;
-  }
-
-  return result;
 }
 
 /**
