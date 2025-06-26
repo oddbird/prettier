@@ -12,8 +12,7 @@ function embed(path) {
   }
 }
 
-// `front-matter` only available on `css-root`
-embed.getVisitorKeys = (node) =>
-  node.type === "css-root" ? ["frontMatter"] : [];
+// `front-matter` only available on `root`
+embed.getVisitorKeys = (node) => (node.type === "root" ? ["frontMatter"] : []);
 
 export default embed;

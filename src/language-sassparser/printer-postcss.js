@@ -110,15 +110,12 @@ function genericPrint(path, options, print) {
     }
     case "rule":
       return [
-        print("selector"),
+        // TODO: Replace this once sass-parser exposes parsed selector node
+        node.selector.trim(),
+        // print("selector"),
         node.nodes
           ? [
-              // node.selector?.type === "selector-unknown" &&
-              lastLineHasInlineComment(node.selector)
-                ? line
-                : node.selector
-                  ? " "
-                  : "",
+              node.selector ? " " : "",
               "{",
               node.nodes.length > 0
                 ? indent([hardline, printSequence(path, options, print)])
@@ -508,6 +505,7 @@ function genericPrint(path, options, print) {
 
     default:
       /* c8 ignore next */
+      console.error(node);
       throw new UnexpectedNodeError(node, "PostCSS", "sassType");
   }
 }
