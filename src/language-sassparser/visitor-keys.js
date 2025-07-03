@@ -14,6 +14,9 @@ const visitorKeys = {
   "binary-operation": ["left", "right"],
   string: [],
   "function-call": ["arguments"],
+  "function-rule": ["nodes"],
+  "return-rule": ["nodes"],
+  "mixin-rule": ["nodes"],
   unknown: [],
 };
 

@@ -50,6 +50,21 @@ import {
  * @import {Doc} from "../document/builders.js"
  */
 
+function shouldBreakList(path) {
+  return path.match(
+    (node) =>
+      // TODO: This originally found any children that are more than a
+      // single expression. Maybe this should target any expression?
+      node.some?.((node) =>
+        ["list", "binary-operation"].includes(node.sassType),
+      ),
+    (node, key) =>
+      key === "expression" &&
+      ((node.type === "decl" && !node.prop.startsWith("--")) ||
+        (node.type === "atrule" && node.variable)),
+  );
+}
+
 function hasComma({ node, parent }, options) {
   return Boolean(
     node.source &&
@@ -88,6 +103,7 @@ function genericPrint(path, options, print) {
   switch (node.sassType) {
     case "front-matter":
       return [node.raw, hardline];
+
     case "root": {
       const nodes = printSequence(path, options, print);
       let after = node.raws.after?.trim() ?? "";
@@ -102,17 +118,16 @@ function genericPrint(path, options, print) {
         node.nodes.length > 0 ? hardline : "",
       ];
     }
-    case "sass-comment":
-    case "comment": {
-      const text = options.originalText.slice(locStart(node), locEnd(node));
 
-      return node.sassType === "sass-comment" ? text.trimEnd() : text;
-    }
+    case "sass-comment":
+    case "comment":
+      return [node.toString(), hardline];
+
     case "rule":
       return [
         // TODO: Replace this once sass-parser exposes parsed selector node
-        node.selector.trim(),
         // print("selector"),
+        node.selector.trim(),
         node.nodes
           ? [
               node.selector ? " " : "",
@@ -132,24 +147,23 @@ function genericPrint(path, options, print) {
       const parentNode = path.parent;
       const { between: rawBetween } = node.raws;
       const trimmedBetween = rawBetween?.trim() ?? ":";
-      // const isColon = trimmedBetween === ":";
+      const isColon = trimmedBetween === ":";
       const isValueAllSpace =
-        node.expression === "undefined" && /^ *$/u.test(node.value);
+        node.expression === undefined && /^ *$/u.test(node.value);
       let value = node.expression ? print("expression") : node.value;
 
       value = hasComposesNode(node) ? removeLines(value) : value;
 
-      // TODO: Haven't checked this path yet
-      // if (
-      //   !isColon &&
-      //   lastLineHasInlineComment(trimmedBetween) &&
-      //   !(
-      //     node.value?.group?.group &&
-      //     path.call(() => shouldBreakList(path), "value", "group", "group")
-      //   )
-      // ) {
-      //   value = indent([hardline, dedent(value)]);
-      // }
+      if (
+        !isColon &&
+        lastLineHasInlineComment(trimmedBetween) &&
+        !(
+          node.expression &&
+          path.call(() => shouldBreakList(path), "expression")
+        )
+      ) {
+        value = indent([hardline, dedent(value)]);
+      }
 
       return [
         node.raws.before?.replaceAll(/[\s;]/gu, "") ?? "",
@@ -184,6 +198,9 @@ function genericPrint(path, options, print) {
       ];
     }
 
+    case "function-rule":
+    case "return-rule":
+    case "mixin-rule":
     case "include-rule":
     case "atrule": {
       const parentNode = path.parent;
@@ -192,57 +209,16 @@ function genericPrint(path, options, print) {
         !parentNode.raws.semicolon &&
         options.originalText[locEnd(node) - 1] !== ";";
 
-      if (options.parser === "less") {
-        if (node.mixin) {
-          return [
-            print("selectorTemp"),
-            node.important ? " !important" : "",
-            isTemplatePlaceholderNodeWithoutSemiColon ? "" : ";",
-          ];
-        }
-
-        if (node.function) {
-          return [
-            node.name,
-            typeof node.params === "string" ? node.params : print("params"),
-            isTemplatePlaceholderNodeWithoutSemiColon ? "" : ";",
-          ];
-        }
-
-        if (node.variable) {
-          return [
-            "@",
-            node.name,
-            ": ",
-            node.value ? print("value") : "",
-            node.raws.between.trim() ? node.raws.between.trim() + " " : "",
-            node.nodes
-              ? [
-                  "{",
-                  indent([
-                    node.nodes.length > 0 ? softline : "",
-                    printSequence(path, options, print),
-                  ]),
-                  softline,
-                  "}",
-                ]
-              : "",
-            isTemplatePlaceholderNodeWithoutSemiColon ? "" : ";",
-          ];
-        }
-      }
-      const isImportUnknownValueEndsWithSemiColon =
-        node.name === "import" &&
-        node.params?.type === "unknown" &&
-        node.params.value.endsWith(";");
+      const isImportEndsWithSemiColon =
+        node.name === "import" && node.params.endsWith(";");
 
       return [
         "@",
         // If a Less file ends up being parsed with the SCSS parser, Less
-        // variable declarations will be parsed as at-rules with names ending
+        // variable declarations will be parsed as at-rules with params starting
         // with a colon, so keep the original case then.
         isDetachedRulesetCallNode(node) ||
-        node.name.endsWith(":") ||
+        node.params.startsWith(": ") ||
         isTemplatePlaceholderNode(node)
           ? node.name
           : maybeToLowerCase(node.name),
@@ -253,18 +229,23 @@ function genericPrint(path, options, print) {
                 : isTemplatePlaceholderNode(node)
                   ? node.raws.afterName === ""
                     ? ""
-                    : node.name.endsWith(":")
-                      ? " "
+                    : node.params.startsWith(": ")
+                      ? ""
                       : /^\s*\n\s*\n/u.test(node.raws.afterName)
                         ? [hardline, hardline]
                         : /^\s*\n/u.test(node.raws.afterName)
                           ? hardline
                           : " "
-                  : " ",
-              typeof node.params === "string" ? node.params : print("params"),
+                  : node.params.startsWith(": ")
+                    ? ""
+                    : " ",
+              // TODO: `node.params` should be parsed so they can be formatted
+              // print("params"),
+              node.params.trim(),
             ]
           : "",
-        node.selectorTemp ? indent([" ", print("selectorTemp")]) : "",
+        // TODO: Can at-rules have a selector? `@extend`?
+        node.selector ? indent([" ", print("selector")]) : "",
         node.value
           ? group([
               " ",
@@ -282,13 +263,11 @@ function genericPrint(path, options, print) {
           ? [
               isSCSSControlDirectiveNode(node, options)
                 ? ""
-                : (node.selectorTemp &&
-                      !node.selectorTemp.nodes &&
-                      typeof node.selectorTemp.value === "string" &&
-                      lastLineHasInlineComment(node.selectorTemp.value)) ||
-                    (!node.selectorTemp &&
-                      typeof node.params === "string" &&
-                      lastLineHasInlineComment(node.params))
+                : (node.selector &&
+                      !node.selector.nodes &&
+                      typeof node.selector.value === "string" &&
+                      lastLineHasInlineComment(node.selector.value)) ||
+                    (!node.selector && lastLineHasInlineComment(node.params))
                   ? line
                   : " ",
               "{",
@@ -300,38 +279,22 @@ function genericPrint(path, options, print) {
               "}",
             ]
           : isTemplatePlaceholderNodeWithoutSemiColon ||
-              isImportUnknownValueEndsWithSemiColon
+              isImportEndsWithSemiColon
             ? ""
             : ";",
       ];
     }
 
-    case "color":
-      return node.value.toString();
-
     case "function-call":
       return [
-        (node.namespace
+        node.namespace
           ? (node.raws.namespace?.value === node.namespace
               ? node.raws.namespace.raw
-              : // : sassInternal.toCssIdentifier(node.namespace)) + '.'
-                node.namespace) + "."
-          : "") +
-          (node.raws.name?.value === node.name
-            ? node.raws.name.raw
-            : // : sassInternal.toCssIdentifier(node.name)) +
-              node.name) +
-          print("arguments"),
+              : node.namespace) + "."
+          : "",
+        node.raws.name?.value === node.name ? node.raws.name.raw : node.name,
+        print("arguments"),
       ];
-
-    // case "func":
-    //   return [
-    //     node.value,
-    //     insideAtRuleNode(path, "supports") && isMediaAndSupportsKeywords(node)
-    //       ? " "
-    //       : "",
-    //     print("group"),
-    //   ];
 
     case "argument": {
       const printed = [
@@ -371,31 +334,21 @@ function genericPrint(path, options, print) {
     case "map":
     case "argument-list":
     case "list": {
+      // console.log(node);
       const parentNode = path.parent;
       const hasParens =
         parentNode.sassType === "parenthesized" ||
         node.sassType === "argument-list" ||
         node.sassType === "map";
-      console.log(node);
+      // console.log(node);
       const nodeDocs = path.map(
         ({ node }) => (typeof node === "string" ? node : print()),
         "nodes",
       );
-      console.log(nodeDocs);
+      // console.log(nodeDocs);
 
       if (!hasParens) {
-        const forceHardLine = path.match(
-          (node) =>
-            // TODO: This originally found any children that are more than a
-            // single expression. Maybe this should target any expression?
-            node.some((node) =>
-              ["list", "binary-operation"].includes(node.sassType),
-            ),
-          (node, key) =>
-            key === "expression" &&
-            ((node.type === "decl" && !node.prop.startsWith("--")) ||
-              (node.type === "atrule" && node.variable)),
-        );
+        const forceHardLine = shouldBreakList(path);
         assertDocArray(nodeDocs);
         const separator = (node.separator ?? "").trim();
         const withSeparator = chunk(join(separator, nodeDocs), 2);
@@ -473,11 +426,22 @@ function genericPrint(path, options, print) {
       return shouldDedent ? dedent(doc) : doc;
     }
 
-    case "number":
-      return [
-        printCssNumber(node.value.toString()),
-        printUnit(node.unit ?? ""),
-      ];
+    case "number": {
+      const unit = printUnit(node.unit ?? "");
+      // TODO: This doesn't seem to be implemented in sass-parser
+      if (node.raws?.value?.value === node.value) {
+        return [printCssNumber(node.raws.value.raw), unit];
+      }
+      return [printCssNumber(node.value.toString()), unit];
+    }
+
+    case "color": {
+      const text = node.value.toString();
+      if (/^#.+/u.test(text)) {
+        return text.toLowerCase();
+      }
+      return text;
+    }
 
     case "binary-operation":
       return group([print("left"), " ", node.operator, " ", print("right")]);

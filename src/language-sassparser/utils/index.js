@@ -187,7 +187,7 @@ function isSCSSControlDirectiveNode(node, options) {
 }
 
 function isDetachedRulesetCallNode(node) {
-  return node.raws?.params && /^\(\s*\)$/u.test(node.raws.params);
+  return node.params && /^\(\s*\)$/u.test(node.params);
 }
 
 function isTemplatePlaceholderNode(node) {
