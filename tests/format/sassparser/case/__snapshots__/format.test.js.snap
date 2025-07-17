@@ -1,6 +1,6 @@
-// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+// Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`case.sassparser format 1`] = `
+exports[`case.scss format 1`] = `
 ====================================options=====================================
 parsers: ["sassparser"]
 printWidth: 80
@@ -167,12 +167,12 @@ TABLE {}
 @import Keep;
 
 HTML#KeepId.KeepClass,
-a[HREF=KeepAttrValue]:HOVER::FIRST-letter,
+a[HREF="KeepAttrValue"]:hover::first-letter,
 svg[viewBox] linearGradient,
-:Not(:NTH-child(2N+1)) {
+:not(:nth-child(2n + 1)) {
   color: #aabbcc;
   background-image: URL("KeepString");
-  margin: 5px 2000000000em;
+  margin: 5px 0.2e10em;
   --Keep-custom-Prop: red;
   background: Var(--Keep-custom-Prop);
   animation-name: KeepAnimationName;
@@ -188,17 +188,17 @@ svg[viewBox] linearGradient,
 }
 
 @keyframes KeepAnimationName {
-  FROM {
+  from {
     prop: val;
   }
 
   #{$KeepInterpolationVar},
-  #{$Keep + 15PX + Keep15PX + "15PX" + "15PX"},
+  #{$Keep + 15px + Keep15PX + "15PX" + "15PX"},
   #{$Keep + $Keep15PX} {
     prop: val;
   }
 
-  TO {
+  to {
     prop: val;
   }
 }
@@ -218,7 +218,7 @@ svg[viewBox] linearGradient,
 $KeepTopLevelVar: val;
 @KeepLessVar: val;
 
-@mixin KeepMixinName($Keep: 15IN) {
+@mixin KeepMixinName($Keep: 15in) {
 }
 @mixin KeepMixinName($Keep: $Keep15IN) {
 }
@@ -230,7 +230,7 @@ $KeepTopLevelVar: val;
   @KeepLessVar: val;
   @extend %KeepPlaceholderSelector;
 
-  #{$Keep}[#{$Keep}][#{Keep}^=#{Keep-1A}]:#{$Keep} {
+  #{$Keep}[#{$Keep}][#{Keep}^="#{Keep-1A}"]:#{$Keep} {
     prop: val;
   }
 
@@ -246,7 +246,7 @@ $KeepTopLevelVar: val;
     color: RED;
   }
 
-  #{$Keep + 15PX + Keep15PX + "15PX" + "15PX"}: {
+  #{$Keep + 15px + Keep15PX + "15PX" + "15PX"}: {
     color: RED;
   }
 }
@@ -256,9 +256,9 @@ $KeepTopLevelVar: val;
 @mixin Keep($Keep: Keepå1E1) {
 }
 
-@media (MIN-WIDTH: 700PX) {
+@media (min-width: 700px) {
   @include Keep;
-  @include Keep(1.2cH);
+  @include Keep(0.12e1ch);
   @include Keep($Keep12E01cH);
 }
 
@@ -266,25 +266,25 @@ $KeepTopLevelVar: val;
 }
 
 @keyframes identifier {
-  FROM {
+  from {
     margin-top: 50px;
   }
   50% {
     margin-top: 150px;
   }
-  TO {
+  to {
     margin-top: 100px;
   }
 }
 
 @-webkit-keyframes float-up {
-  FROM {
+  from {
     margin-top: 50px;
   }
   50% {
     margin-top: 150px;
   }
-  TO {
+  to {
     margin-top: 100px;
   }
 }
@@ -293,21 +293,21 @@ $KeepTopLevelVar: val;
   color: hsl(0.75turn, 60%, 70%);
 }
 
-p:FIRST-CHILD {
+p:first-child {
   color: lime;
   background-color: black;
   padding: 5px;
 }
 
-a::AFTER {
+a::after {
   content: "→";
 }
 
-a:AFTER {
+a:after {
   content: "→";
 }
 
-::-WEBKIT-PROGRESS-BAR {
+::-webkit-progress-bar {
   background-color: orange;
 }
 

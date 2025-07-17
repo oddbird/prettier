@@ -9,12 +9,15 @@ import {
   line,
   softline,
 } from "../document/builders.js";
+// import {
+//   DOC_TYPE_FILL,
+//   DOC_TYPE_GROUP,
+//   DOC_TYPE_INDENT,
+// } from "../document/constants.js";
 import {
-  DOC_TYPE_FILL,
-  DOC_TYPE_GROUP,
-  DOC_TYPE_INDENT,
-} from "../document/constants.js";
-import { getDocType, removeLines } from "../document/utils.js";
+  // getDocType,
+  removeLines,
+} from "../document/utils.js";
 import { assertDocArray } from "../document/utils/assert-doc.js";
 import isNextLineEmpty from "../utils/is-next-line-empty.js";
 import isNonEmptyArray from "../utils/is-non-empty-array.js";
@@ -33,7 +36,7 @@ import printSequence from "./print/sequence.js";
 import { chunk } from "./utils/chunk.js";
 import {
   hasComposesNode,
-  hasParensAroundNode,
+  // hasParensAroundNode,
   insideICSSRuleNode,
   isDetachedRulesetCallNode,
   isDetachedRulesetDeclarationNode,
@@ -82,13 +85,7 @@ function printTrailingComma(path, options) {
 
   if (
     path.node.type !== "comment" &&
-    // !(
-    //   path.node.type === "value-comma_group" &&
-    //   path.node.groups.every((group) => group.type === "value-comment")
-    // ) &&
     shouldPrintTrailingComma(options) &&
-    // path.callParent(() => isSCSSMapItemNode(path, options))
-    options.parser === "scss" &&
     path.callParent(() => path.node.sassType === "map")
   ) {
     return ifBreak(",");
@@ -121,7 +118,8 @@ function genericPrint(path, options, print) {
 
     case "sass-comment":
     case "comment":
-      return [node.toString(), hardline];
+      // TODO: This strips trailing newlines
+      return node.toString();
 
     case "rule":
       return [
@@ -188,6 +186,7 @@ function genericPrint(path, options, print) {
               "}",
             ]
           : // TODO: Handle `@prettier-placeholder`
+            // https://github.com/prettier/prettier/issues/6790
             isTemplatePropNode(node) &&
               !parentNode.raws.semicolon &&
               options.originalText[locEnd(node) - 1] !== ";"
@@ -202,15 +201,15 @@ function genericPrint(path, options, print) {
     case "return-rule":
     case "mixin-rule":
     case "include-rule":
+    case "content-rule":
+    case "import-rule":
     case "atrule": {
       const parentNode = path.parent;
       const isTemplatePlaceholderNodeWithoutSemiColon =
         isTemplatePlaceholderNode(node) &&
         !parentNode.raws.semicolon &&
         options.originalText[locEnd(node) - 1] !== ";";
-
-      const isImportEndsWithSemiColon =
-        node.name === "import" && node.params.endsWith(";");
+      const nameKey = `${node.sassType.split("-")[0]}Name`;
 
       return [
         "@",
@@ -222,7 +221,12 @@ function genericPrint(path, options, print) {
         isTemplatePlaceholderNode(node)
           ? node.name
           : maybeToLowerCase(node.name),
-        node.params
+        // Known Sass-specific at-rules have parsed parameters in `nameKey`
+        node[nameKey]
+          ? [" ", node.namespace ? node.namespace + "." : "", node[nameKey]]
+          : "",
+        // Generic CSS at-rules do not have parsed parameters
+        node.sassType === "atrule" && node.params
           ? [
               isDetachedRulesetCallNode(node)
                 ? ""
@@ -239,26 +243,40 @@ function genericPrint(path, options, print) {
                   : node.params.startsWith(": ")
                     ? ""
                     : " ",
-              // TODO: `node.params` should be parsed so they can be formatted
-              // print("params"),
               node.params.trim(),
             ]
           : "",
-        // TODO: Can at-rules have a selector? `@extend`?
-        node.selector ? indent([" ", print("selector")]) : "",
-        node.value
-          ? group([
-              " ",
-              print("value"),
-              isSCSSControlDirectiveNode(node, options)
-                ? hasParensAroundNode(node)
-                  ? " "
-                  : line
-                : "",
-            ])
-          : node.name === "else"
-            ? " "
-            : "",
+        // TODO: Should `@extend` at-rules have a parsed "selector"?
+        // node.selector ? indent([" ", print("selector")]) : "",
+        // node.value
+        //   ? group([
+        //       " ",
+        //       print("value"),
+        //       isSCSSControlDirectiveNode(node, options)
+        //         ? hasParensAroundNode(node)
+        //           ? " "
+        //           : line
+        //         : "",
+        //     ])
+        //   : node.name === "else"
+        //     ? " "
+        //     : "",
+        node.arguments && isNonEmptyArray(node.arguments.nodes)
+          ? print("arguments")
+          : "",
+        node.using ? [" using ", print("using")] : "",
+        node.parameters &&
+        (node.sassType === "function-rule" ||
+          isNonEmptyArray(node.parameters.nodes))
+          ? print("parameters")
+          : "",
+        node.contentArguments && isNonEmptyArray(node.contentArguments.nodes)
+          ? print("contentArguments")
+          : "",
+        node.imports && isNonEmptyArray(node.imports.nodes)
+          ? [" ", print("imports")]
+          : "",
+        node.returnExpression ? [" ", print("returnExpression")] : "",
         node.nodes
           ? [
               isSCSSControlDirectiveNode(node, options)
@@ -278,8 +296,7 @@ function genericPrint(path, options, print) {
               softline,
               "}",
             ]
-          : isTemplatePlaceholderNodeWithoutSemiColon ||
-              isImportEndsWithSemiColon
+          : isTemplatePlaceholderNodeWithoutSemiColon
             ? ""
             : ";",
       ];
@@ -296,56 +313,70 @@ function genericPrint(path, options, print) {
         print("arguments"),
       ];
 
-    case "argument": {
-      const printed = [
+    case "parameter":
+    case "argument":
+      return group([
         node.name === undefined
           ? ""
-          : "$" +
-            (node.raws.name?.value === node.name
-              ? node.raws.name.raw
-              : // : sassInternal.toCssIdentifier(node.name)) +
-                node.name) +
-            group([node.raws.between ?? ":", line]),
-        print("value"),
+          : [
+              "$" +
+                (node.raws.name?.value === node.name
+                  ? node.raws.name.raw
+                  : node.name),
+              node.sassType !== "parameter" || node.defaultValue
+                ? (node.raws.between ?? ":")
+                : "",
+              line,
+            ],
+        node.defaultValue ? print("defaultValue") : "",
+        node.value ? print("value") : "",
         node.rest ? (node.raws.beforeRest ?? "") + "..." : "",
-      ];
-      /** @type {Doc[]} */
-      const parts = [""];
-      for (let i = 0; i < printed.length; ++i) {
-        parts.push([parts.pop(), printed[i]]);
-      }
-      return group(indent(fill(parts)));
-    }
+      ]);
 
-    case "map-entry": {
-      const printed = [
+    case "map-entry":
+      return group([
         print("key"),
-        group([node.raws.between ?? ":", line]),
+        [node.raws.between ?? ":", line],
         print("value"),
-      ];
-      /** @type {Doc[]} */
-      const parts = [""];
-      for (let i = 0; i < printed.length; ++i) {
-        parts.push([parts.pop(), printed[i]]);
-      }
-      return group(indent(fill(parts)));
-    }
+      ]);
+
+    case "import-list":
+      return group([indent([join([",", line], path.map(print, "nodes"))])]);
+
+    case "static-import":
+      return group([
+        print("staticUrl"),
+        node.modifiers ? [node.raws.between ?? " ", print("modifiers")] : "",
+      ]);
+
+    case "dynamic-import":
+      return group([
+        node.raws.url?.value === node.url
+          ? node.raws.url.raw
+          : '"' + node.url + '"',
+      ]);
+
+    case "interpolation":
+      return path.map(
+        ({ node }) => (typeof node === "string" ? node : print()),
+        "nodes",
+      );
 
     case "map":
+    case "parameter-list":
     case "argument-list":
     case "list": {
-      // console.log(node);
       const parentNode = path.parent;
       const hasParens =
         parentNode.sassType === "parenthesized" ||
+        node.sassType === "parameter-list" ||
         node.sassType === "argument-list" ||
         node.sassType === "map";
-      // console.log(node);
+
       const nodeDocs = path.map(
         ({ node }) => (typeof node === "string" ? node : print()),
         "nodes",
       );
-      // console.log(nodeDocs);
 
       if (!hasParens) {
         const forceHardLine = shouldBreakList(path);
@@ -359,35 +390,28 @@ function genericPrint(path, options, print) {
             : group([parentNode.type === "decl" ? softline : "", fill(parts)]),
         );
       }
-      // console.log(nodeDocs);
+
       const parts = path.map(({ node: child, isLast, index }) => {
-        let doc = nodeDocs[index];
-        // if (child.sassType === "argument") {
-        //   console.log(doc);
-        // }
-        // console.log(doc);
-        // console.log(getDocType(doc.contents));
-        // console.log(getDocType(doc.contents.contents));
+        const doc = nodeDocs[index];
+
         // Key/Value pair in open paren already indented
-        if (
-          (child.sassType === "map-entry" || child.sassType === "argument") &&
-          !["parenthesized", "argument-list", "map"].includes(
-            child.key?.sassType,
-          ) &&
-          ["parenthesized", "argument-list", "map"].includes(
-            child.value.sassType,
-          ) &&
-          getDocType(doc) === DOC_TYPE_GROUP &&
-          getDocType(doc.contents) === DOC_TYPE_INDENT &&
-          getDocType(doc.contents.contents) === DOC_TYPE_FILL
-        ) {
-          console.log("YES");
-          doc = group(dedent(doc));
-        }
+        // TODO: This is not checked
+        // if (
+        //   (child.sassType === "map-entry" || child.sassType === "argument") &&
+        //   !["parenthesized", "argument-list", "map"].includes(
+        //     child.key?.sassType,
+        //   ) &&
+        //   ["parenthesized", "argument-list", "map"].includes(
+        //     child.value.sassType,
+        //   ) &&
+        //   getDocType(doc) === DOC_TYPE_GROUP &&
+        //   getDocType(doc.contents) === DOC_TYPE_INDENT &&
+        //   getDocType(doc.contents.contents) === DOC_TYPE_FILL
+        // ) {
+        //   doc = group(dedent(doc));
+        // }
 
         const parts = [doc, isLast ? printTrailingComma(path, options) : ","];
-        // console.log(parts);
-
         if (
           !isLast &&
           ["map", "list", "argument-list"].includes(child.sassType) &&
@@ -452,6 +476,9 @@ function genericPrint(path, options, print) {
     case "selector-expr":
     case "variable":
       return node.toString();
+
+    case "null":
+      return "null";
 
     case "string": {
       const text = node.toString().trim();
