@@ -199,6 +199,7 @@ function genericPrint(path, options, print) {
 
     case "content-rule":
     case "each-rule":
+    case "for-rule":
     case "function-rule":
     case "import-rule":
     case "include-rule":
@@ -212,11 +213,11 @@ function genericPrint(path, options, print) {
         options.originalText[locEnd(node) - 1] !== ";";
       const nameKey = `${node.sassType.split("-")[0]}Name`;
 
-      const args = [];
+      const params = [];
       switch (node.sassType) {
         case "each-rule":
           if (isNonEmptyArray(node.variables) && node.eachExpression) {
-            args.push(
+            params.push(
               " ",
               group([
                 indent([
@@ -234,22 +235,40 @@ function genericPrint(path, options, print) {
             );
           }
           break;
+        case "for-rule":
+          params.push(
+            " ",
+            group([
+              indent([
+                `$${node.variable}`,
+                node.raws.afterVariable ?? line,
+                "from",
+                node.raws.afterFrom ?? " ",
+                print("fromExpression"),
+                node.raws.afterFromExpression ?? line,
+                node.to,
+                node.raws.afterTo ?? " ",
+                print("toExpression"),
+              ]),
+            ]),
+          );
+          break;
         case "function-rule":
           if (node.parameters) {
-            args.push(print("parameters"));
+            params.push(print("parameters"));
           }
           break;
         case "import-rule":
           if (node.imports && isNonEmptyArray(node.imports.nodes)) {
-            args.push(" ", print("imports"));
+            params.push(" ", print("imports"));
           }
           break;
         case "include-rule":
           if (node.arguments && isNonEmptyArray(node.arguments.nodes)) {
-            args.push(print("arguments"));
+            params.push(print("arguments"));
           }
           if (node.using) {
-            args.push(
+            params.push(
               node.raws.afterArguments ?? line,
               "using",
               node.raws.afterUsing ?? " ",
@@ -259,12 +278,12 @@ function genericPrint(path, options, print) {
           break;
         case "mixin-rule":
           if (node.parameters && isNonEmptyArray(node.parameters.nodes)) {
-            args.push(print("parameters"));
+            params.push(print("parameters"));
           }
           break;
         case "return-rule":
           if (node.returnExpression) {
-            args.push(line, print("returnExpression"));
+            params.push(line, print("returnExpression"));
           }
           break;
       }
@@ -279,10 +298,24 @@ function genericPrint(path, options, print) {
         isTemplatePlaceholderNode(node)
           ? node.name
           : maybeToLowerCase(node.name),
-        // Known Sass-specific at-rules have parsed parameters in `nameKey`
         node[nameKey]
           ? [" ", node.namespace ? node.namespace + "." : "", node[nameKey]]
           : "",
+        // TODO: Should `@extend` at-rules have a parsed "selector"?
+        // node.selector ? indent([" ", print("selector")]) : "",
+        // Known Sass-specific at-rules have parsed parameters in `nameKey`
+        node.sassType !== "atrule" && isNonEmptyArray(params)
+          ? group([
+              params,
+              isSCSSControlDirectiveNode(node, options)
+                ? hasParensAroundNode(node)
+                  ? " "
+                  : line
+                : "",
+            ])
+          : node.sassType === "else-rule"
+            ? " "
+            : "",
         // Generic CSS at-rules do not have parsed parameters
         node.sassType === "atrule" && node.params
           ? [
@@ -304,20 +337,6 @@ function genericPrint(path, options, print) {
               node.params.trim(),
             ]
           : "",
-        // TODO: Should `@extend` at-rules have a parsed "selector"?
-        // node.selector ? indent([" ", print("selector")]) : "",
-        isNonEmptyArray(args)
-          ? group([
-              args,
-              isSCSSControlDirectiveNode(node, options)
-                ? hasParensAroundNode(node)
-                  ? " "
-                  : line
-                : "",
-            ])
-          : node.sassType === "else-rule"
-            ? " "
-            : "",
         node.nodes
           ? [
               isSCSSControlDirectiveNode(node, options)
@@ -508,7 +527,9 @@ function genericPrint(path, options, print) {
     }
 
     case "binary-operation":
-      return group([print("left"), " ", node.operator, " ", print("right")]);
+      return group([
+        indent([print("left"), " ", node.operator, line, print("right")]),
+      ]);
 
     case "parenthesized":
       return group(["(", indent([softline, print("inParens")]), softline, ")"]);

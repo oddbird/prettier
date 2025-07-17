@@ -24,6 +24,7 @@ const visitorKeys = {
   "content-rule": ["contentArguments", "nodes"],
   "import-rule": ["imports", "nodes"],
   "each-rule": ["eachExpression", "nodes"],
+  "for-rule": ["fromExpression", "toExpression", "nodes"],
   "static-import": ["staticUrl", "modifiers"],
   interpolation: ["nodes"],
   unknown: [],
