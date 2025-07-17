@@ -36,7 +36,7 @@ import printSequence from "./print/sequence.js";
 import { chunk } from "./utils/chunk.js";
 import {
   hasComposesNode,
-  // hasParensAroundNode,
+  hasParensAroundNode,
   insideICSSRuleNode,
   isDetachedRulesetCallNode,
   isDetachedRulesetDeclarationNode,
@@ -197,12 +197,13 @@ function genericPrint(path, options, print) {
       ];
     }
 
-    case "function-rule":
-    case "return-rule":
-    case "mixin-rule":
-    case "include-rule":
     case "content-rule":
+    case "each-rule":
+    case "function-rule":
     case "import-rule":
+    case "include-rule":
+    case "mixin-rule":
+    case "return-rule":
     case "atrule": {
       const parentNode = path.parent;
       const isTemplatePlaceholderNodeWithoutSemiColon =
@@ -210,6 +211,63 @@ function genericPrint(path, options, print) {
         !parentNode.raws.semicolon &&
         options.originalText[locEnd(node) - 1] !== ";";
       const nameKey = `${node.sassType.split("-")[0]}Name`;
+
+      const args = [];
+      switch (node.sassType) {
+        case "each-rule":
+          if (isNonEmptyArray(node.variables) && node.eachExpression) {
+            args.push(
+              " ",
+              group([
+                indent([
+                  join(
+                    [",", line],
+                    node.variables.map(
+                      (variable, index) =>
+                        `$${variable}${node.raws.afterVariables?.[index] ?? ""}`,
+                    ),
+                  ),
+                  group([line, indent(["in", node.raws.afterIn ?? " "])]),
+                ]),
+              ]),
+              print("eachExpression"),
+            );
+          }
+          break;
+        case "function-rule":
+          if (node.parameters) {
+            args.push(print("parameters"));
+          }
+          break;
+        case "import-rule":
+          if (node.imports && isNonEmptyArray(node.imports.nodes)) {
+            args.push(" ", print("imports"));
+          }
+          break;
+        case "include-rule":
+          if (node.arguments && isNonEmptyArray(node.arguments.nodes)) {
+            args.push(print("arguments"));
+          }
+          if (node.using) {
+            args.push(
+              node.raws.afterArguments ?? line,
+              "using",
+              node.raws.afterUsing ?? " ",
+              print("using"),
+            );
+          }
+          break;
+        case "mixin-rule":
+          if (node.parameters && isNonEmptyArray(node.parameters.nodes)) {
+            args.push(print("parameters"));
+          }
+          break;
+        case "return-rule":
+          if (node.returnExpression) {
+            args.push(line, print("returnExpression"));
+          }
+          break;
+      }
 
       return [
         "@",
@@ -248,35 +306,18 @@ function genericPrint(path, options, print) {
           : "",
         // TODO: Should `@extend` at-rules have a parsed "selector"?
         // node.selector ? indent([" ", print("selector")]) : "",
-        // node.value
-        //   ? group([
-        //       " ",
-        //       print("value"),
-        //       isSCSSControlDirectiveNode(node, options)
-        //         ? hasParensAroundNode(node)
-        //           ? " "
-        //           : line
-        //         : "",
-        //     ])
-        //   : node.name === "else"
-        //     ? " "
-        //     : "",
-        node.arguments && isNonEmptyArray(node.arguments.nodes)
-          ? print("arguments")
-          : "",
-        node.using ? [" using ", print("using")] : "",
-        node.parameters &&
-        (node.sassType === "function-rule" ||
-          isNonEmptyArray(node.parameters.nodes))
-          ? print("parameters")
-          : "",
-        node.contentArguments && isNonEmptyArray(node.contentArguments.nodes)
-          ? print("contentArguments")
-          : "",
-        node.imports && isNonEmptyArray(node.imports.nodes)
-          ? [" ", print("imports")]
-          : "",
-        node.returnExpression ? [" ", print("returnExpression")] : "",
+        isNonEmptyArray(args)
+          ? group([
+              args,
+              isSCSSControlDirectiveNode(node, options)
+                ? hasParensAroundNode(node)
+                  ? " "
+                  : line
+                : "",
+            ])
+          : node.sassType === "else-rule"
+            ? " "
+            : "",
         node.nodes
           ? [
               isSCSSControlDirectiveNode(node, options)
@@ -368,7 +409,6 @@ function genericPrint(path, options, print) {
     case "list": {
       const parentNode = path.parent;
       const hasParens =
-        parentNode.sassType === "parenthesized" ||
         node.sassType === "parameter-list" ||
         node.sassType === "argument-list" ||
         node.sassType === "map";
@@ -496,7 +536,7 @@ function genericPrint(path, options, print) {
 
     default:
       /* c8 ignore next */
-      console.error(node);
+      console.error(node.toJSON());
       throw new UnexpectedNodeError(node, "PostCSS", "sassType");
   }
 }

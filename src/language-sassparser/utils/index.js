@@ -180,7 +180,7 @@ function isRelationalOperatorNode(node) {
 
 function isSCSSControlDirectiveNode(node, options) {
   return (
-    options.parser === "scss" &&
+    options.parser === "sassparser" &&
     node.type === "atrule" &&
     ["if", "else", "for", "each", "while"].includes(node.name)
   );
@@ -212,10 +212,8 @@ function hasComposesNode(node) {
 }
 
 function hasParensAroundNode(node) {
-  return (
-    node.value?.group?.group?.type === "value-paren_group" &&
-    node.value.group.group.open !== null &&
-    node.value.group.group.close !== null
+  return ["parenthesized", "parameter-list", "argument-list", "map"].includes(
+    node.sassType,
   );
 }
 
@@ -239,7 +237,7 @@ function isKeyValuePairInParenGroupNode(node) {
 }
 
 function isSCSSMapItemNode(path, options) {
-  if (options.parser !== "scss") {
+  if (options.parser !== "sassparser") {
     return false;
   }
 
