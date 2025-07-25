@@ -9,15 +9,8 @@ import {
   line,
   softline,
 } from "../document/builders.js";
-// import {
-//   DOC_TYPE_FILL,
-//   DOC_TYPE_GROUP,
-//   DOC_TYPE_INDENT,
-// } from "../document/constants.js";
-import {
-  // getDocType,
-  removeLines,
-} from "../document/utils.js";
+import { DOC_TYPE_GROUP, DOC_TYPE_INDENT } from "../document/constants.js";
+import { getDocType, removeLines } from "../document/utils.js";
 import { assertDocArray } from "../document/utils/assert-doc.js";
 import isNextLineEmpty from "../utils/is-next-line-empty.js";
 import isNonEmptyArray from "../utils/is-non-empty-array.js";
@@ -49,18 +42,33 @@ import {
   maybeToLowerCase,
 } from "./utils/index.js";
 
-/**
- * @import {Doc} from "../document/builders.js"
- */
+function isKeyValuePairNode(node) {
+  return (
+    node.sassType === "map-entry" ||
+    (node.sassType === "argument" && Boolean(node.name)) ||
+    (node.sassType === "parameter" && Boolean(node.defaultValue))
+  );
+}
+
+function isCommaGroup(node) {
+  return (
+    [
+      "argument-list",
+      "parameter-list",
+      "parameter",
+      "binary-operation",
+      "function-call",
+      "list",
+      "map",
+      "parenthesized",
+      "unary-operation",
+    ].includes(node.sassType) || isKeyValuePairNode(node)
+  );
+}
 
 function shouldBreakList(path) {
   return path.match(
-    (node) =>
-      // TODO: This originally found any children that are more than a
-      // single expression. Maybe this should target any expression?
-      node.some?.((node) =>
-        ["list", "binary-operation"].includes(node.sassType),
-      ),
+    (node) => node.some?.(isCommaGroup),
     (node, key) =>
       key === "expression" &&
       ((node.type === "decl" && !node.prop.startsWith("--")) ||
@@ -199,8 +207,10 @@ function genericPrint(path, options, print) {
 
     case "content-rule":
     case "each-rule":
+    case "else-rule":
     case "for-rule":
     case "function-rule":
+    case "if-rule":
     case "import-rule":
     case "include-rule":
     case "mixin-rule":
@@ -215,11 +225,19 @@ function genericPrint(path, options, print) {
 
       const params = [];
       switch (node.sassType) {
+        case "content-rule":
+          if (
+            node.raws.showArguments ||
+            isNonEmptyArray(node.contentArguments)
+          ) {
+            params.push("contentArguments");
+          }
+          break;
         case "each-rule":
           if (isNonEmptyArray(node.variables) && node.eachExpression) {
             params.push(
               " ",
-              group([
+              group(
                 indent([
                   join(
                     [",", line],
@@ -230,15 +248,28 @@ function genericPrint(path, options, print) {
                   ),
                   group([line, indent(["in", node.raws.afterIn ?? " "])]),
                 ]),
-              ]),
+              ),
               print("eachExpression"),
+            );
+          }
+          break;
+        case "else-rule":
+          if (node.elseCondition) {
+            params.push(
+              group(
+                indent([
+                  " if",
+                  node.raws.afterIf ?? line,
+                  print("elseCondition"),
+                ]),
+              ),
             );
           }
           break;
         case "for-rule":
           params.push(
             " ",
-            group([
+            group(
               indent([
                 `$${node.variable}`,
                 node.raws.afterVariable ?? line,
@@ -250,21 +281,25 @@ function genericPrint(path, options, print) {
                 node.raws.afterTo ?? " ",
                 print("toExpression"),
               ]),
-            ]),
+            ),
           );
           break;
         case "function-rule":
-          if (node.parameters) {
-            params.push(print("parameters"));
-          }
+          params.push(print("parameters"));
+          break;
+        case "if-rule":
+          params.push([" ", print("ifCondition")]);
           break;
         case "import-rule":
-          if (node.imports && isNonEmptyArray(node.imports.nodes)) {
+          if (isNonEmptyArray(node.imports.nodes)) {
             params.push(" ", print("imports"));
           }
           break;
         case "include-rule":
-          if (node.arguments && isNonEmptyArray(node.arguments.nodes)) {
+          if (
+            node.raws.showArguments ||
+            isNonEmptyArray(node.arguments.nodes)
+          ) {
             params.push(print("arguments"));
           }
           if (node.using) {
@@ -277,7 +312,7 @@ function genericPrint(path, options, print) {
           }
           break;
         case "mixin-rule":
-          if (node.parameters && isNonEmptyArray(node.parameters.nodes)) {
+          if (isNonEmptyArray(node.parameters.nodes)) {
             params.push(print("parameters"));
           }
           break;
@@ -299,7 +334,17 @@ function genericPrint(path, options, print) {
           ? node.name
           : maybeToLowerCase(node.name),
         node[nameKey]
-          ? [" ", node.namespace ? node.namespace + "." : "", node[nameKey]]
+          ? [
+              " ",
+              node.namespace
+                ? node.raws.namespace?.value === node.namespace
+                  ? node.raws.namespace.raw
+                  : node.namespace + "."
+                : "",
+              node.raws[nameKey]?.value === node[nameKey]
+                ? node.raws[nameKey].raw
+                : node[nameKey],
+            ]
           : "",
         // TODO: Should `@extend` at-rules have a parsed "selector"?
         // node.selector ? indent([" ", print("selector")]) : "",
@@ -386,22 +431,24 @@ function genericPrint(path, options, print) {
               node.sassType !== "parameter" || node.defaultValue
                 ? (node.raws.between ?? ":")
                 : "",
-              line,
+              // Don't add line break if the value is a map
+              node.value?.sassType === "map" ? " " : line,
             ],
         node.defaultValue ? print("defaultValue") : "",
         node.value ? print("value") : "",
         node.rest ? (node.raws.beforeRest ?? "") + "..." : "",
       ]);
 
-    case "map-entry":
-      return group([
-        print("key"),
-        [node.raws.between ?? ":", line],
-        print("value"),
-      ]);
+    case "map-entry": {
+      const keyDoc = print("key");
+      const valueDoc = print("value");
+      const between = node.raws.between ?? ": ";
+
+      return group([keyDoc, between, valueDoc]);
+    }
 
     case "import-list":
-      return group([indent([join([",", line], path.map(print, "nodes"))])]);
+      return group(indent([join([",", line], path.map(print, "nodes"))]));
 
     case "static-import":
       return group([
@@ -437,6 +484,7 @@ function genericPrint(path, options, print) {
         "nodes",
       );
 
+      // Handle lists without parentheses
       if (!hasParens) {
         const forceHardLine = shouldBreakList(path);
         assertDocArray(nodeDocs);
@@ -450,47 +498,45 @@ function genericPrint(path, options, print) {
         );
       }
 
+      // Handle parenthesized lists/maps/arguments
       const parts = path.map(({ node: child, isLast, index }) => {
-        const doc = nodeDocs[index];
+        let doc = nodeDocs[index];
 
-        // Key/Value pair in open paren already indented
-        // TODO: This is not checked
-        // if (
-        //   (child.sassType === "map-entry" || child.sassType === "argument") &&
-        //   !["parenthesized", "argument-list", "map"].includes(
-        //     child.key?.sassType,
-        //   ) &&
-        //   ["parenthesized", "argument-list", "map"].includes(
-        //     child.value.sassType,
-        //   ) &&
-        //   getDocType(doc) === DOC_TYPE_GROUP &&
-        //   getDocType(doc.contents) === DOC_TYPE_INDENT &&
-        //   getDocType(doc.contents.contents) === DOC_TYPE_FILL
-        // ) {
-        //   doc = group(dedent(doc));
-        // }
+        // Key/Value pair in open paren - check if it needs dedenting
+        // This handles cases like (key: (nested, values)) where the nested part
+        // is already indented and we need to dedent to align properly
+        if (
+          isKeyValuePairNode(child) &&
+          child.value &&
+          ["parenthesized", "argument-list", "map", "list"].includes(
+            child.value.sassType,
+          ) &&
+          getDocType(doc) === DOC_TYPE_GROUP &&
+          isNonEmptyArray(doc.contents) &&
+          getDocType(doc.contents[0]) === DOC_TYPE_INDENT
+        ) {
+          doc = group(dedent(doc));
+        }
 
         const parts = [doc, isLast ? printTrailingComma(path, options) : ","];
+
+        // Add extra line break after comma groups if there's an empty line in original
         if (
           !isLast &&
-          ["map", "list", "argument-list"].includes(child.sassType) &&
-          isNonEmptyArray(child.nodes)
+          isCommaGroup(child) &&
+          // TODO: `source` isn't implemented yet in sass-parser
+          child.source &&
+          isNextLineEmpty(options.originalText, locEnd(child))
         ) {
-          const { last } = child;
-
-          if (
-            last.source &&
-            isNextLineEmpty(options.originalText, locEnd(last))
-          ) {
-            parts.push(hardline);
-          }
+          parts.push(hardline);
         }
 
         return parts;
       }, "nodes");
+
       const isKey =
         parentNode.sassType === "map-entry" && parentNode.key === node;
-      const isSCSSMapItem = parentNode.sassType === "map";
+      const isSCSSMapItem = node.sassType === "map";
       const shouldBreak = isSCSSMapItem && !isKey;
       const shouldDedent = isKey;
 
@@ -511,11 +557,15 @@ function genericPrint(path, options, print) {
 
     case "number": {
       const unit = printUnit(node.unit ?? "");
-      // TODO: This doesn't seem to be implemented in sass-parser
-      if (node.raws?.value?.value === node.value) {
-        return [printCssNumber(node.raws.value.raw), unit];
-      }
-      return [printCssNumber(node.value.toString()), unit];
+      return [
+        printCssNumber(
+          // TODO: This doesn't seem to be implemented in sass-parser
+          node.raws?.value?.value === node.value
+            ? node.raws.value.raw
+            : node.value.toString(),
+        ),
+        unit,
+      ];
     }
 
     case "color": {
@@ -526,10 +576,21 @@ function genericPrint(path, options, print) {
       return text;
     }
 
-    case "binary-operation":
+    case "binary-operation": {
+      const leftDoc = print("left");
+      const rightDoc = print("right");
+      const { operator } = node;
+      const beforeOperator = node.raws.beforeOperator ?? " ";
+      const afterOperator = node.raws.afterOperator ?? " ";
+
       return group([
-        indent([print("left"), " ", node.operator, line, print("right")]),
+        leftDoc,
+        beforeOperator,
+        operator,
+        afterOperator === " " ? line : afterOperator,
+        rightDoc,
       ]);
+    }
 
     case "parenthesized":
       return group(["(", indent([softline, print("inParens")]), softline, ")"]);
@@ -537,6 +598,9 @@ function genericPrint(path, options, print) {
     case "selector-expr":
     case "variable":
       return node.toString();
+
+    case "boolean":
+      return node.value.toString();
 
     case "null":
       return "null";
