@@ -178,9 +178,8 @@ function isRelationalOperatorNode(node) {
   );
 }
 
-function isSCSSControlDirectiveNode(node, options) {
+function isSCSSControlDirectiveNode(node) {
   return (
-    options.parser === "sassparser" &&
     node.type === "atrule" &&
     ["if", "else", "for", "each", "while"].includes(node.name)
   );

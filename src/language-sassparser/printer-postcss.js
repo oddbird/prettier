@@ -237,18 +237,18 @@ function genericPrint(path, options, print) {
           if (isNonEmptyArray(node.variables) && node.eachExpression) {
             params.push(
               " ",
-              group(
-                indent([
-                  join(
-                    [",", line],
-                    node.variables.map(
-                      (variable, index) =>
-                        `$${variable}${node.raws.afterVariables?.[index] ?? ""}`,
-                    ),
+              group([
+                join(
+                  [",", line],
+                  node.variables.map(
+                    (variable, index) =>
+                      `$${variable}${node.raws.afterVariables?.[index] ?? ""}`,
                   ),
-                  group([line, indent(["in", node.raws.afterIn ?? " "])]),
-                ]),
-              ),
+                ),
+                line,
+                "in",
+                node.raws.afterIn ?? " ",
+              ]),
               print("eachExpression"),
             );
           }
@@ -256,39 +256,31 @@ function genericPrint(path, options, print) {
         case "else-rule":
           if (node.elseCondition) {
             params.push(
-              group(
-                indent([
-                  " if",
-                  node.raws.afterIf ?? line,
-                  print("elseCondition"),
-                ]),
-              ),
+              group([" if", node.raws.afterIf ?? line, print("elseCondition")]),
             );
           }
           break;
         case "for-rule":
           params.push(
             " ",
-            group(
-              indent([
-                `$${node.variable}`,
-                node.raws.afterVariable ?? line,
-                "from",
-                node.raws.afterFrom ?? " ",
-                print("fromExpression"),
-                node.raws.afterFromExpression ?? line,
-                node.to,
-                node.raws.afterTo ?? " ",
-                print("toExpression"),
-              ]),
-            ),
+            group([
+              `$${node.variable}`,
+              node.raws.afterVariable ?? line,
+              "from",
+              node.raws.afterFrom ?? " ",
+              print("fromExpression"),
+              node.raws.afterFromExpression ?? line,
+              node.to,
+              node.raws.afterTo ?? " ",
+              print("toExpression"),
+            ]),
           );
           break;
         case "function-rule":
           params.push(print("parameters"));
           break;
         case "if-rule":
-          params.push([" ", print("ifCondition")]);
+          params.push(" ", print("ifCondition"));
           break;
         case "import-rule":
           if (isNonEmptyArray(node.imports.nodes)) {
@@ -350,14 +342,9 @@ function genericPrint(path, options, print) {
         // node.selector ? indent([" ", print("selector")]) : "",
         // Known Sass-specific at-rules have parsed parameters in `nameKey`
         node.sassType !== "atrule" && isNonEmptyArray(params)
-          ? group([
-              params,
-              isSCSSControlDirectiveNode(node, options)
-                ? hasParensAroundNode(node)
-                  ? " "
-                  : line
-                : "",
-            ])
+          ? isSCSSControlDirectiveNode(node)
+            ? group([indent(params), hasParensAroundNode(node) ? " " : line])
+            : group(params)
           : node.sassType === "else-rule"
             ? " "
             : "",
@@ -384,7 +371,7 @@ function genericPrint(path, options, print) {
           : "",
         node.nodes
           ? [
-              isSCSSControlDirectiveNode(node, options)
+              isSCSSControlDirectiveNode(node)
                 ? ""
                 : (node.selector &&
                       !node.selector.nodes &&
@@ -431,11 +418,20 @@ function genericPrint(path, options, print) {
               node.sassType !== "parameter" || node.defaultValue
                 ? (node.raws.between ?? ":")
                 : "",
-              // Don't add line break if the value is a map
-              node.value?.sassType === "map" ? " " : line,
             ],
-        node.defaultValue ? print("defaultValue") : "",
-        node.value ? print("value") : "",
+        node.defaultValue
+          ? [
+              hasParensAroundNode(node.defaultValue) ? " " : line,
+              print("defaultValue"),
+            ]
+          : "",
+        node.value
+          ? node.name === undefined
+            ? print("value")
+            : hasParensAroundNode(node.value)
+              ? [" ", print("value")]
+              : indent([line, print("value")])
+          : "",
         node.rest ? (node.raws.beforeRest ?? "") + "..." : "",
       ]);
 
@@ -491,11 +487,11 @@ function genericPrint(path, options, print) {
         const separator = (node.separator ?? "").trim();
         const withSeparator = chunk(join(separator, nodeDocs), 2);
         const parts = join(forceHardLine ? hardline : line, withSeparator);
-        return indent(
-          forceHardLine
-            ? [hardline, parts]
-            : group([parentNode.type === "decl" ? softline : "", fill(parts)]),
-        );
+        const doc = forceHardLine
+          ? [hardline, parts]
+          : group([parentNode.type === "decl" ? softline : "", fill(parts)]);
+        const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
+        return isDirectChildOfEachRule ? doc : indent(doc);
       }
 
       // Handle parenthesized lists/maps/arguments
@@ -537,8 +533,9 @@ function genericPrint(path, options, print) {
       const isKey =
         parentNode.sassType === "map-entry" && parentNode.key === node;
       const isSCSSMapItem = node.sassType === "map";
-      const shouldBreak = isSCSSMapItem && !isKey;
-      const shouldDedent = isKey;
+      const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
+      const shouldBreak = isSCSSMapItem && !isKey && !isDirectChildOfEachRule;
+      const shouldDedent = isKey || isDirectChildOfEachRule;
 
       const doc = group(
         [
@@ -583,13 +580,26 @@ function genericPrint(path, options, print) {
       const beforeOperator = node.raws.beforeOperator ?? " ";
       const afterOperator = node.raws.afterOperator ?? " ";
 
-      return group([
+      // For binary operations, determine if we need extra indentation
+      // Extra indentation is needed when we're nested inside other constructs like parentheses
+      const needsExtraIndent = path.parent.sassType === "parenthesized";
+
+      const parts = [
         leftDoc,
         beforeOperator,
         operator,
-        afterOperator === " " ? line : afterOperator,
+        afterOperator === " "
+          ? needsExtraIndent
+            ? indent(line)
+            : line
+          : afterOperator,
         rightDoc,
-      ]);
+      ];
+
+      // Only group the outermost binary operation
+      // This ensures all operations in a chain break together
+      const parentIsBinaryOp = path.parent.sassType === "binary-operation";
+      return parentIsBinaryOp ? parts : group(parts);
     }
 
     case "parenthesized":
