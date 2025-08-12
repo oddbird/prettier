@@ -7583,7 +7583,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:8.5.6, postcss@npm:>=8.4.41 <8.6.0":
+"postcss@npm:8.5.5":
+  version: 8.5.5
+  resolution: "postcss@npm:8.5.5"
+  dependencies:
+    nanoid: "npm:^3.3.11"
+    picocolors: "npm:^1.1.1"
+    source-map-js: "npm:^1.2.1"
+  checksum: 10/c80f723c754b656bf7c983e34841fa35fe0c37a13edd27e24de64e7962cfab11ea081b3b1c900838d2dbe576a045fdecad4f17862c488f12735742f525d22cf0
+  languageName: node
+  linkType: hard
+
+"postcss@npm:8.5.6":
   version: 8.5.6
   resolution: "postcss@npm:8.5.6"
   dependencies:
@@ -7720,7 +7731,7 @@ __metadata:
     remark-math: "npm:3.0.1"
     remark-parse: "npm:8.0.3"
     rollup-plugin-license: "npm:3.6.0"
-    sass-parser: "npm:0.4.24"
+    sass-parser: "npm:0.4.25"
     sdbm: "npm:2.0.0"
     search-closest: "npm:1.1.0"
     semver: "npm:7.7.2"
@@ -8082,19 +8093,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sass-parser@npm:0.4.24":
-  version: 0.4.24
-  resolution: "sass-parser@npm:0.4.24"
+"sass-parser@npm:0.4.25":
+  version: 0.4.25
+  resolution: "sass-parser@npm:0.4.25"
   dependencies:
-    postcss: "npm:>=8.4.41 <8.6.0"
-    sass: "npm:^1.89.2"
-  checksum: 10/78434ac4d59cd97f540db91f0ff1f70e2e15de055c6882abbf1469acfb246d08ac6a37bf61b8f7950264cf416818ff54b023666c04b51002dbdb1a4be663b0bf
+    postcss: "npm:8.5.5"
+    sass: "npm:^1.90.0"
+  checksum: 10/f9a2f8ef2ab84aafdbe9ccdcbfd6c16117eebeb3d49f414749198d7d96962c2b77937b1ea8f3198078313cdf08b9620c34d6a2592ec089f6676e2d2b13a41661
   languageName: node
   linkType: hard
 
-"sass@npm:^1.89.2":
-  version: 1.89.2
-  resolution: "sass@npm:1.89.2"
+"sass@npm:^1.90.0":
+  version: 1.90.0
+  resolution: "sass@npm:1.90.0"
   dependencies:
     "@parcel/watcher": "npm:^2.4.1"
     chokidar: "npm:^4.0.0"
@@ -8105,7 +8116,7 @@ __metadata:
       optional: true
   bin:
     sass: sass.js
-  checksum: 10/7e9044f3c88b23580731de321cdf4c53fe6139395e2241fce7ff353c60a7cc8fe36b5eedc9701e092d2975f2c124e886379bb9ceab27b5ed053548f202b992b3
+  checksum: 10/409236ad975fbf0ea5bbf256d7a11da52b94489873ede6317cd85a44be376a3332daf439b95b39ea5b78e6e94d630541db3d128f3fbaffe4a72a0e34545f219c
   languageName: node
   linkType: hard
 
