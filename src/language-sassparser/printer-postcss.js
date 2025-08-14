@@ -215,6 +215,7 @@ function genericPrint(path, options, print) {
     case "include-rule":
     case "mixin-rule":
     case "return-rule":
+    case "while-rule":
     case "atrule": {
       const parentNode = path.parent;
       const isTemplatePlaceholderNodeWithoutSemiColon =
@@ -224,6 +225,7 @@ function genericPrint(path, options, print) {
       const nameKey = `${node.sassType.split("-")[0]}Name`;
 
       const params = [];
+      let child;
       switch (node.sassType) {
         case "content-rule":
           if (
@@ -231,6 +233,7 @@ function genericPrint(path, options, print) {
             isNonEmptyArray(node.contentArguments)
           ) {
             params.push("contentArguments");
+            child = node.contentArguments;
           }
           break;
         case "each-rule":
@@ -251,6 +254,7 @@ function genericPrint(path, options, print) {
               ]),
               print("eachExpression"),
             );
+            child = node.eachExpression;
           }
           break;
         case "else-rule":
@@ -258,6 +262,7 @@ function genericPrint(path, options, print) {
             params.push(
               group([" if", node.raws.afterIf ?? line, print("elseCondition")]),
             );
+            child = node.elseCondition;
           }
           break;
         case "for-rule":
@@ -278,13 +283,16 @@ function genericPrint(path, options, print) {
           break;
         case "function-rule":
           params.push(print("parameters"));
+          child = node.parameters;
           break;
         case "if-rule":
           params.push(" ", print("ifCondition"));
+          child = node.ifCondition;
           break;
         case "import-rule":
           if (isNonEmptyArray(node.imports.nodes)) {
             params.push(" ", print("imports"));
+            child = node.imports;
           }
           break;
         case "include-rule":
@@ -293,6 +301,7 @@ function genericPrint(path, options, print) {
             isNonEmptyArray(node.arguments.nodes)
           ) {
             params.push(print("arguments"));
+            child = node.arguments;
           }
           if (node.using) {
             params.push(
@@ -301,17 +310,24 @@ function genericPrint(path, options, print) {
               node.raws.afterUsing ?? " ",
               print("using"),
             );
+            child = node.using;
           }
           break;
         case "mixin-rule":
           if (isNonEmptyArray(node.parameters.nodes)) {
             params.push(print("parameters"));
+            child = node.parameters;
           }
           break;
         case "return-rule":
           if (node.returnExpression) {
             params.push(line, print("returnExpression"));
+            child = node.returnExpression;
           }
+          break;
+        case "while-rule":
+          params.push(" ", print("whileCondition"));
+          child = node.whileCondition;
           break;
       }
 
@@ -343,7 +359,12 @@ function genericPrint(path, options, print) {
         // Known Sass-specific at-rules have parsed parameters in `nameKey`
         node.sassType !== "atrule" && isNonEmptyArray(params)
           ? isSCSSControlDirectiveNode(node)
-            ? group([indent(params), hasParensAroundNode(node) ? " " : line])
+            ? group([
+                child && child.sassType === "parenthesized"
+                  ? params
+                  : indent(params),
+                child && hasParensAroundNode(child) ? " " : line,
+              ])
             : group(params)
           : node.sassType === "else-rule"
             ? " "
@@ -373,7 +394,8 @@ function genericPrint(path, options, print) {
           ? [
               isSCSSControlDirectiveNode(node)
                 ? ""
-                : (node.selector &&
+                : // TODO: Should `@extend` at-rules have a parsed "selector"?
+                  (node.selector &&
                       !node.selector.nodes &&
                       typeof node.selector.value === "string" &&
                       lastLineHasInlineComment(node.selector.value)) ||
@@ -438,9 +460,9 @@ function genericPrint(path, options, print) {
     case "map-entry": {
       const keyDoc = print("key");
       const valueDoc = print("value");
-      const between = node.raws.between ?? ": ";
+      const between = node.raws.between ?? [":", line];
 
-      return group([keyDoc, between, valueDoc]);
+      return group(indent([keyDoc, between, valueDoc]));
     }
 
     case "import-list":
