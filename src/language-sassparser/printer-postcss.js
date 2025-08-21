@@ -208,6 +208,7 @@ function genericPrint(path, options, print) {
     }
 
     case "content-rule":
+    case "debug-rule":
     case "each-rule":
     case "else-rule":
     case "error-rule":
@@ -240,6 +241,10 @@ function genericPrint(path, options, print) {
             params.push("contentArguments");
             child = node.contentArguments;
           }
+          break;
+        case "debug-rule":
+          params.push(" ", print("debugExpression"));
+          child = node.debugExpression;
           break;
         case "each-rule":
           if (isNonEmptyArray(node.variables) && node.eachExpression) {

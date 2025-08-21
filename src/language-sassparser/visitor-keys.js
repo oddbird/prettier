@@ -30,6 +30,7 @@ const visitorKeys = {
   "use-rule": ["configuration"],
   "warn-rule": ["warnExpression", "nodes"],
   "error-rule": ["errorExpression", "nodes"],
+  "debug-rule": ["debugExpression", "nodes"],
   "while-rule": ["whileCondition", "nodes"],
   "static-import": ["staticUrl", "modifiers"],
   configuration: ["nodes"],
