@@ -27,8 +27,11 @@ const visitorKeys = {
   "for-rule": ["fromExpression", "toExpression", "nodes"],
   "if-rule": ["ifCondition", "nodes"],
   "else-rule": ["elseCondition", "nodes"],
+  "use-rule": ["configuration"],
   "while-rule": ["whileCondition", "nodes"],
   "static-import": ["staticUrl", "modifiers"],
+  configuration: ["nodes"],
+  "configured-variable": ["expression"],
   interpolation: ["nodes"],
   unknown: [],
 };

@@ -45,6 +45,7 @@ import {
 function isKeyValuePairNode(node) {
   return (
     node.sassType === "map-entry" ||
+    node.sassType === "configured-variable" ||
     (node.sassType === "argument" && Boolean(node.name)) ||
     (node.sassType === "parameter" && Boolean(node.defaultValue))
   );
@@ -60,6 +61,7 @@ function isCommaGroup(node) {
       "function-call",
       "list",
       "map",
+      "configuration",
       "parenthesized",
       "unary-operation",
     ].includes(node.sassType) || isKeyValuePairNode(node)
@@ -215,6 +217,7 @@ function genericPrint(path, options, print) {
     case "include-rule":
     case "mixin-rule":
     case "return-rule":
+    case "use-rule":
     case "while-rule":
     case "atrule": {
       const parentNode = path.parent;
@@ -325,6 +328,28 @@ function genericPrint(path, options, print) {
             child = node.returnExpression;
           }
           break;
+        case "use-rule":
+          params.push(
+            " ",
+            node.raws.url?.value === node.useUrl
+              ? node.raws.url.raw
+              : printString('"' + node.useUrl + '"', options),
+            node.raws.namespace?.value === node.namespace
+              ? node.raws.namespace.raw
+              : !node.namespace
+                ? " as *"
+                : node.defaultNamespace !== node.namespace
+                  ? " as " + node.namespace
+                  : "",
+          );
+          if (node.configuration.size > 0) {
+            params.push(
+              `${node.raws.beforeWith ?? " "}with`,
+              `${node.raws.afterWith ?? " "}`,
+              print("configuration"),
+            );
+          }
+          break;
         case "while-rule":
           params.push(" ", print("whileCondition"));
           child = node.whileCondition;
@@ -360,9 +385,7 @@ function genericPrint(path, options, print) {
         node.sassType !== "atrule" && isNonEmptyArray(params)
           ? isSCSSControlDirectiveNode(node)
             ? group([
-                child && child.sassType === "parenthesized"
-                  ? params
-                  : indent(params),
+                child?.sassType === "parenthesized" ? params : indent(params),
                 child && hasParensAroundNode(child) ? " " : line,
               ])
             : group(params)
@@ -416,6 +439,17 @@ function genericPrint(path, options, print) {
       ];
     }
 
+    case "configured-variable":
+      return group(
+        indent([
+          "$",
+          node.raws.name?.value === node.name ? node.raws.name.raw : node.name,
+          node.raws.between ?? [":", line],
+          print("expression"),
+          node.guarded ? [node.raws.beforeGuard ?? " ", "!default"] : "",
+        ]),
+      );
+
     case "function-call":
       return [
         node.namespace
@@ -433,10 +467,10 @@ function genericPrint(path, options, print) {
         node.name === undefined
           ? ""
           : [
-              "$" +
-                (node.raws.name?.value === node.name
-                  ? node.raws.name.raw
-                  : node.name),
+              "$",
+              node.raws.name?.value === node.name
+                ? node.raws.name.raw
+                : node.name,
               node.sassType !== "parameter" || node.defaultValue
                 ? (node.raws.between ?? ":")
                 : "",
@@ -478,7 +512,7 @@ function genericPrint(path, options, print) {
       return group([
         node.raws.url?.value === node.url
           ? node.raws.url.raw
-          : '"' + node.url + '"',
+          : printString('"' + node.url + '"', options),
       ]);
 
     case "interpolation":
@@ -490,12 +524,14 @@ function genericPrint(path, options, print) {
     case "map":
     case "parameter-list":
     case "argument-list":
-    case "list": {
+    case "list":
+    case "configuration": {
       const parentNode = path.parent;
-      const hasParens =
-        node.sassType === "parameter-list" ||
-        node.sassType === "argument-list" ||
-        node.sassType === "map";
+      const hasParens = node.sassType !== "list";
+
+      if (node.sassType === "configuration") {
+        node.nodes = [...node.variables()];
+      }
 
       const nodeDocs = path.map(
         ({ node }) => (typeof node === "string" ? node : print()),
@@ -554,7 +590,8 @@ function genericPrint(path, options, print) {
 
       const isKey =
         parentNode.sassType === "map-entry" && parentNode.key === node;
-      const isSCSSMapItem = node.sassType === "map";
+      const isSCSSMapItem =
+        node.sassType === "map" || node.sassType === "configuration";
       const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
       const shouldBreak = isSCSSMapItem && !isKey && !isDirectChildOfEachRule;
       const shouldDedent = isKey || isDirectChildOfEachRule;

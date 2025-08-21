@@ -41,6 +41,11 @@ function calculateLocEnd(node, text) {
 }
 
 function calculateLoc(node, text) {
+  // TODO: "configuration" nodes do not have `source.span` implemented yet
+  if (node.sassType === "configuration") {
+    return;
+  }
+
   if (node.source) {
     node.source.startOffset = calculateLocStart(node, text);
     node.source.endOffset = calculateLocEnd(node, text);
