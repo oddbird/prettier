@@ -210,6 +210,7 @@ function genericPrint(path, options, print) {
     case "content-rule":
     case "each-rule":
     case "else-rule":
+    case "error-rule":
     case "for-rule":
     case "function-rule":
     case "if-rule":
@@ -218,6 +219,7 @@ function genericPrint(path, options, print) {
     case "mixin-rule":
     case "return-rule":
     case "use-rule":
+    case "warn-rule":
     case "while-rule":
     case "atrule": {
       const parentNode = path.parent;
@@ -267,6 +269,10 @@ function genericPrint(path, options, print) {
             );
             child = node.elseCondition;
           }
+          break;
+        case "error-rule":
+          params.push(" ", print("errorExpression"));
+          child = node.errorExpression;
           break;
         case "for-rule":
           params.push(
@@ -349,6 +355,10 @@ function genericPrint(path, options, print) {
               print("configuration"),
             );
           }
+          break;
+        case "warn-rule":
+          params.push(" ", print("warnExpression"));
+          child = node.warnExpression;
           break;
         case "while-rule":
           params.push(" ", print("whileCondition"));

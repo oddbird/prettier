@@ -28,6 +28,8 @@ const visitorKeys = {
   "if-rule": ["ifCondition", "nodes"],
   "else-rule": ["elseCondition", "nodes"],
   "use-rule": ["configuration"],
+  "warn-rule": ["warnExpression", "nodes"],
+  "error-rule": ["errorExpression", "nodes"],
   "while-rule": ["whileCondition", "nodes"],
   "static-import": ["staticUrl", "modifiers"],
   configuration: ["nodes"],
