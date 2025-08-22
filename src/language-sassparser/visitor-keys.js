@@ -37,6 +37,7 @@ const visitorKeys = {
   configuration: ["nodes"],
   "configured-variable": ["expression"],
   interpolation: ["nodes"],
+  "unary-operation": ["operand"],
   unknown: [],
 };
 

@@ -63,7 +63,6 @@ function isCommaGroup(node) {
       "map",
       "configuration",
       "parenthesized",
-      "unary-operation",
     ].includes(node.sassType) || isKeyValuePairNode(node)
   );
 }
@@ -186,7 +185,7 @@ function genericPrint(path, options, print) {
     case "sass-comment":
     case "comment":
       // TODO: This strips trailing newlines
-      return node.toString();
+      return node.toString().trim();
 
     case "rule":
       return [
@@ -763,8 +762,20 @@ function genericPrint(path, options, print) {
       return group(["(", indent([softline, print("inParens")]), softline, ")"]);
 
     case "selector-expr":
+      return "&";
+
     case "variable":
-      return node.toString();
+      return [
+        node.namespace
+          ? (node.raws.namespace?.value === node.namespace
+              ? node.raws.namespace.raw
+              : node.namespace) + "."
+          : "",
+        "$" +
+          (node.raws.variableName?.value === node.variableName
+            ? node.raws.variableName.raw
+            : node.variableName),
+      ];
 
     case "boolean":
       return node.value.toString();
@@ -782,6 +793,21 @@ function genericPrint(path, options, print) {
       }
       return text;
     }
+
+    case "unary-operation":
+      return group([
+        node.operator,
+        node.raws.between ??
+          (node.operator === "not" ||
+          (node.operator === "-" &&
+            ((node.operand.sassType === "string" && !node.operand.quotes) ||
+              node.operand.sassType === "function-call" ||
+              node.operand.sassType === "interpolated-function-call")) ||
+          node.operand.sassType === "number"
+            ? " "
+            : ""),
+        print("operand"),
+      ]);
 
     case "unknown":
       return node.value;
