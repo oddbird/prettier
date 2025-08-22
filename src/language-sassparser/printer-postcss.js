@@ -104,6 +104,63 @@ function printTrailingComma(path, options) {
   return "";
 }
 
+function setsEqual(set1, set2) {
+  if (set1 === set2) {
+    return true;
+  }
+  if (set1.size !== set2.size) {
+    return false;
+  }
+  for (const element of set1) {
+    if (!set2.has(element)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function memberListsEqual(list1, list2) {
+  if (list1 === list2) {
+    return true;
+  }
+  if (!list1 || !list2) {
+    return false;
+  }
+  return (
+    setsEqual(list1.mixinsAndFunctions, list2.mixinsAndFunctions) &&
+    setsEqual(list1.variables, list2.variables)
+  );
+}
+
+function serializeMemberList(keyword, members, raws) {
+  if (memberListsEqual(members, raws?.value)) {
+    return raws.raw;
+  }
+  const mixinsAndFunctionsEmpty = members.mixinsAndFunctions.size === 0;
+  const variablesEmpty = members.variables.size === 0;
+  if (mixinsAndFunctionsEmpty && variablesEmpty) {
+    return "";
+  }
+
+  // TODO: This will re-order the members
+  const allItems = [
+    ...members.mixinsAndFunctions,
+    ...[...members.variables].map((variable) => `$${variable}`),
+  ];
+
+  if (allItems.length === 1) {
+    return indent([line, keyword, " ", allItems[0]]);
+  }
+
+  return group(
+    indent([
+      indent([line, keyword, " ", allItems[0], ","]),
+      line,
+      fill(join(line, chunk(join(",", allItems.slice(1)), 2))),
+    ]),
+  );
+}
+
 function genericPrint(path, options, print) {
   const { node } = path;
 
@@ -213,6 +270,7 @@ function genericPrint(path, options, print) {
     case "else-rule":
     case "error-rule":
     case "for-rule":
+    case "forward-rule":
     case "function-rule":
     case "if-rule":
     case "import-rule":
@@ -294,6 +352,31 @@ function genericPrint(path, options, print) {
               print("toExpression"),
             ]),
           );
+          break;
+        case "forward-rule":
+          params.push(
+            " ",
+            node.raws.url?.value === node.forwardUrl
+              ? node.raws.url.raw
+              : printString('"' + node.forwardUrl + '"', options),
+            node.raws.prefix?.value === node.prefix
+              ? node.raws.prefix.raw
+              : node.prefix
+                ? " as " + node.prefix + "*"
+                : "",
+            node.show
+              ? serializeMemberList("show", node.show, node.raws.show)
+              : node.hide
+                ? serializeMemberList("hide", node.hide, node.raws.hide)
+                : "",
+          );
+          if (node.configuration.size > 0) {
+            params.push(
+              `${node.raws.beforeWith ?? " "}with`,
+              `${node.raws.afterWith ?? " "}`,
+              print("configuration"),
+            );
+          }
           break;
         case "function-rule":
           params.push(print("parameters"));

@@ -27,6 +27,7 @@ const visitorKeys = {
   "for-rule": ["fromExpression", "toExpression", "nodes"],
   "if-rule": ["ifCondition", "nodes"],
   "else-rule": ["elseCondition", "nodes"],
+  "forward-rule": ["configuration"],
   "use-rule": ["configuration"],
   "warn-rule": ["warnExpression", "nodes"],
   "error-rule": ["errorExpression", "nodes"],
