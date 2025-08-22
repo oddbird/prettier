@@ -315,9 +315,7 @@ function genericPrint(path, options, print) {
                       `$${variable}${node.raws.afterVariables?.[index] ?? ""}`,
                   ),
                 ),
-                line,
-                "in",
-                node.raws.afterIn ?? " ",
+                indent([line, "in", node.raws.afterIn ?? " "]),
               ]),
               print("eachExpression"),
             );
@@ -640,13 +638,20 @@ function genericPrint(path, options, print) {
         const forceHardLine = shouldBreakList(path);
         assertDocArray(nodeDocs);
         const separator = (node.separator ?? "").trim();
-        const withSeparator = chunk(join(separator, nodeDocs), 2);
+        const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
+        const docs =
+          isDirectChildOfEachRule && nodeDocs.length > 1
+            ? nodeDocs.slice(1)
+            : nodeDocs;
+        const withSeparator = chunk(join(separator, docs), 2);
         const parts = join(forceHardLine ? hardline : line, withSeparator);
         const doc = forceHardLine
           ? [hardline, parts]
           : group([parentNode.type === "decl" ? softline : "", fill(parts)]);
-        const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
-        return isDirectChildOfEachRule ? doc : indent(doc);
+        if (isDirectChildOfEachRule) {
+          return [nodeDocs[0], separator, forceHardLine ? hardline : line, doc];
+        }
+        return indent(doc);
       }
 
       // Handle parenthesized lists/maps/arguments
