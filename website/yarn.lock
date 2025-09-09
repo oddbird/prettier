@@ -10305,6 +10305,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"picomatch@npm:^4.0.3":
+  version: 4.0.3
+  resolution: "picomatch@npm:4.0.3"
+  checksum: 10/57b99055f40b16798f2802916d9c17e9744e620a0db136554af01d19598b96e45e2f00014c91d1b8b13874b80caa8c295b3d589a3f72373ec4aaf54baa5962d5
+  languageName: node
+  linkType: hard
+
 "pkg-dir@npm:^7.0.0":
   version: 7.0.0
   resolution: "pkg-dir@npm:7.0.0"
@@ -12066,7 +12073,7 @@ __metadata:
     react-dom: "npm:18.3.1"
     react-markdown: "npm:10.1.0"
     react-tweet: "npm:3.2.2"
-    vite: "npm:7.0.0"
+    vite: "npm:7.0.7"
   languageName: unknown
   linkType: soft
 
@@ -13369,14 +13376,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vite@npm:7.0.0":
-  version: 7.0.0
-  resolution: "vite@npm:7.0.0"
+"vite@npm:7.0.7":
+  version: 7.0.7
+  resolution: "vite@npm:7.0.7"
   dependencies:
     esbuild: "npm:^0.25.0"
     fdir: "npm:^6.4.6"
     fsevents: "npm:~2.3.3"
-    picomatch: "npm:^4.0.2"
+    picomatch: "npm:^4.0.3"
     postcss: "npm:^8.5.6"
     rollup: "npm:^4.40.0"
     tinyglobby: "npm:^0.2.14"
@@ -13420,7 +13427,7 @@ __metadata:
       optional: true
   bin:
     vite: bin/vite.js
-  checksum: 10/2501b706dc481529efb16c6241794a66d68ea7a074d49f22e45b701769fbeeccc721c58272c9fce743d3b1472a3de497f85ca18cb059b1b8b906b2b295e524dc
+  checksum: 10/9bfbd6c6a84cbb977f3a7a8a38889c3b099461178644ffe7e94dc4e8ccc722f07befe0f2fc628d76cad56803f4b8f908e330c80224e57d9514d49195c646690c
   languageName: node
   linkType: hard
 
