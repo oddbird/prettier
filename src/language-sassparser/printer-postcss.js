@@ -12,7 +12,6 @@ import {
 import { DOC_TYPE_GROUP, DOC_TYPE_INDENT } from "../document/constants.js";
 import { getDocType, removeLines } from "../document/utils.js";
 import { assertDocArray } from "../document/utils/assert-doc.js";
-import isNextLineEmpty from "../utils/is-next-line-empty.js";
 import isNonEmptyArray from "../utils/is-non-empty-array.js";
 import printString from "../utils/print-string.js";
 import UnexpectedNodeError from "../utils/unexpected-node-error.js";
@@ -56,14 +55,15 @@ function isCommaGroup(node) {
     [
       "argument-list",
       "parameter-list",
-      "parameter",
-      "binary-operation",
       "function-call",
-      "list",
       "map",
       "configuration",
       "parenthesized",
-    ].includes(node.sassType) || isKeyValuePairNode(node)
+      // TODO: How aggressively should we break lists?
+      // "binary-operation",
+    ].includes(node.sassType) ||
+    isKeyValuePairNode(node) ||
+    (node.sassType === "list" && [",", "/"].includes(node.separator))
   );
 }
 
@@ -91,11 +91,12 @@ function printTrailingComma(path, options) {
   if (isVarFunctionNode(path.grandparent) && hasComma(path, options)) {
     return ",";
   }
-
   if (
     path.node.type !== "comment" &&
     shouldPrintTrailingComma(options) &&
-    path.callParent(() => path.node.sassType === "map")
+    path.callParent(
+      () => path.node.sassType === "map" || path.node.sassType === "list",
+    )
   ) {
     return ifBreak(",");
   }
@@ -158,6 +159,19 @@ function serializeMemberList(keyword, members, raws) {
       fill(join(line, chunk(join(",", allItems.slice(1)), 2))),
     ]),
   );
+}
+
+function isInMap(path) {
+  const hasParens = path.parent.sassType === "parenthesized";
+  const mapNode = hasParens ? path.grandparent : path.parent;
+  const childNode = hasParens ? path.parent : path.node;
+  if (mapNode.sassType !== "map-entry") {
+    return { isKey: false, isValue: false };
+  }
+  return {
+    isKey: mapNode.key === childNode,
+    isValue: mapNode.value === childNode,
+  };
 }
 
 function genericPrint(path, options, print) {
@@ -534,16 +548,21 @@ function genericPrint(path, options, print) {
       ];
     }
 
-    case "configured-variable":
+    case "configured-variable": {
+      const between = node.raws.between ?? [
+        ":",
+        hasParensAroundNode(node.expression) ? " " : line,
+      ];
       return group(
         indent([
           "$",
           node.raws.name?.value === node.name ? node.raws.name.raw : node.name,
-          node.raws.between ?? [":", line],
+          between,
           print("expression"),
           node.guarded ? [node.raws.beforeGuard ?? " ", "!default"] : "",
         ]),
       );
+    }
 
     case "function-call":
       return [
@@ -589,7 +608,12 @@ function genericPrint(path, options, print) {
     case "map-entry": {
       const keyDoc = print("key");
       const valueDoc = print("value");
-      const between = node.raws.between ?? [":", line];
+      const between = node.raws.between ?? [
+        ":",
+        hasParensAroundNode(node.key) || hasParensAroundNode(node.value)
+          ? " "
+          : line,
+      ];
 
       return group(indent([keyDoc, between, valueDoc]));
     }
@@ -622,7 +646,6 @@ function genericPrint(path, options, print) {
     case "list":
     case "configuration": {
       const parentNode = path.parent;
-      const hasParens = node.sassType !== "list";
 
       if (node.sassType === "configuration") {
         node.nodes = [...node.variables()];
@@ -634,7 +657,11 @@ function genericPrint(path, options, print) {
       );
 
       // Handle lists without parentheses
-      if (!hasParens) {
+      if (node.sassType === "list" && parentNode.sassType !== "parenthesized") {
+        // Handle empty lists
+        if (node.nodes.length === 0) {
+          return ["()"];
+        }
         const forceHardLine = shouldBreakList(path);
         assertDocArray(nodeDocs);
         const separator = (node.separator ?? "").trim();
@@ -661,54 +688,56 @@ function genericPrint(path, options, print) {
         // Key/Value pair in open paren - check if it needs dedenting
         // This handles cases like (key: (nested, values)) where the nested part
         // is already indented and we need to dedent to align properly
-        if (
-          isKeyValuePairNode(child) &&
-          child.value &&
-          ["parenthesized", "argument-list", "map", "list"].includes(
-            child.value.sassType,
-          ) &&
-          getDocType(doc) === DOC_TYPE_GROUP &&
-          isNonEmptyArray(doc.contents) &&
-          getDocType(doc.contents[0]) === DOC_TYPE_INDENT
-        ) {
-          doc = group(dedent(doc));
+        if (isKeyValuePairNode(child)) {
+          const value =
+            child.sassType === "configured-variable"
+              ? child.expression
+              : child.value;
+          if (
+            value &&
+            ["parenthesized", "argument-list", "map", "list"].includes(
+              value.sassType,
+            ) &&
+            getDocType(doc) === DOC_TYPE_GROUP &&
+            getDocType(doc.contents) === DOC_TYPE_INDENT
+          ) {
+            doc = group(dedent(doc));
+          }
         }
-
         const parts = [doc, isLast ? printTrailingComma(path, options) : ","];
 
-        // Add extra line break after comma groups if there's an empty line in original
-        if (
-          !isLast &&
-          isCommaGroup(child) &&
-          // TODO: `source` isn't implemented yet in sass-parser
-          child.source &&
-          isNextLineEmpty(options.originalText, locEnd(child))
-        ) {
-          parts.push(hardline);
-        }
+        // TODO: Is this still needed?
+        // if (
+        //   !isLast &&
+        //   isCommaGroup(child) &&
+        //   child.source &&
+        //   isNextLineEmpty(options.originalText, locEnd(child))
+        // ) {
+        //   parts.push(hardline);
+        // }
 
         return parts;
       }, "nodes");
 
-      const isKey =
-        parentNode.sassType === "map-entry" && parentNode.key === node;
-      const isSCSSMapItem =
-        node.sassType === "map" || node.sassType === "configuration";
-      const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
-      const shouldBreak = isSCSSMapItem && !isKey && !isDirectChildOfEachRule;
-      const shouldDedent = isKey || isDirectChildOfEachRule;
-
-      const doc = group(
-        [
-          hasParens ? "(" : "",
-          indent([softline, join(line, parts)]),
-          softline,
-          hasParens ? ")" : "",
-        ],
-        {
-          shouldBreak,
-        },
+      const { isKey, isValue } = isInMap(path);
+      const isInConfiguration = Boolean(
+        node.sassType === "configuration" ||
+          path.findAncestor((node) => node.sassType === "configuration"),
       );
+      const hasParens = parentNode.sassType === "parenthesized";
+      const isSCSSMap = node.sassType === "map";
+      const isInEachRule = Boolean(
+        path.findAncestor((node) => node.sassType === "each-rule"),
+      );
+      const shouldBreak =
+        (isInConfiguration || isValue || isSCSSMap) && !isInEachRule;
+      const shouldDedent =
+        isInConfiguration || isKey || isInEachRule || isValue;
+      const doc = hasParens
+        ? group(indent(join(line, parts)), { shouldBreak })
+        : group(["(", indent([softline, join(line, parts)]), softline, ")"], {
+            shouldBreak,
+          });
 
       return shouldDedent ? dedent(doc) : doc;
     }
@@ -763,8 +792,13 @@ function genericPrint(path, options, print) {
       return parentIsBinaryOp ? parts : group(parts);
     }
 
-    case "parenthesized":
-      return group(["(", indent([softline, print("inParens")]), softline, ")"]);
+    case "parenthesized": {
+      const shouldBreak =
+        path.parent.sassType === "map-entry" &&
+        (path.parent.key === node || path.parent.value === node);
+      const doc = ["(", indent([softline, print("inParens")]), softline, ")"];
+      return group(shouldBreak ? dedent(doc) : doc, { shouldBreak });
+    }
 
     case "selector-expr":
       return "&";
