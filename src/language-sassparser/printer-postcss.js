@@ -607,14 +607,16 @@ function genericPrint(path, options, print) {
 
     case "map-entry": {
       const keyDoc = print("key");
-      const valueDoc = print("value");
+      let valueDoc = print("value");
       const between = node.raws.between ?? [
         ":",
         hasParensAroundNode(node.key) || hasParensAroundNode(node.value)
           ? " "
           : line,
       ];
-
+      if (hasParensAroundNode(node.key) && hasParensAroundNode(node.value)) {
+        valueDoc = indent(valueDoc);
+      }
       return group(indent([keyDoc, between, valueDoc]));
     }
 
@@ -694,10 +696,8 @@ function genericPrint(path, options, print) {
               ? child.expression
               : child.value;
           if (
-            value &&
-            ["parenthesized", "argument-list", "map", "list"].includes(
-              value.sassType,
-            ) &&
+            ((value && hasParensAroundNode(value)) ||
+              (child.key && hasParensAroundNode(child.key))) &&
             getDocType(doc) === DOC_TYPE_GROUP &&
             getDocType(doc.contents) === DOC_TYPE_INDENT
           ) {
@@ -730,16 +730,17 @@ function genericPrint(path, options, print) {
         path.findAncestor((node) => node.sassType === "each-rule"),
       );
       const shouldBreak =
-        (isInConfiguration || isValue || isSCSSMap) && !isInEachRule;
-      const shouldDedent =
-        isInConfiguration || isKey || isInEachRule || isValue;
+        isInConfiguration ||
+        ((isSCSSMap || isValue) && !isKey && !isInEachRule);
+      // const shouldDedent =
+      //   isInConfiguration || isKey || isInEachRule || isValue;
       const doc = hasParens
-        ? group(indent(join(line, parts)), { shouldBreak })
+        ? group(join(line, parts), { shouldBreak })
         : group(["(", indent([softline, join(line, parts)]), softline, ")"], {
             shouldBreak,
           });
 
-      return shouldDedent ? dedent(doc) : doc;
+      return isInEachRule ? dedent(doc) : doc;
     }
 
     case "number": {
@@ -794,10 +795,9 @@ function genericPrint(path, options, print) {
 
     case "parenthesized": {
       const shouldBreak =
-        path.parent.sassType === "map-entry" &&
-        (path.parent.key === node || path.parent.value === node);
+        path.parent.sassType === "map-entry" && path.parent.value === node;
       const doc = ["(", indent([softline, print("inParens")]), softline, ")"];
-      return group(shouldBreak ? dedent(doc) : doc, { shouldBreak });
+      return group(doc, { shouldBreak });
     }
 
     case "selector-expr":
@@ -823,13 +823,19 @@ function genericPrint(path, options, print) {
       return "null";
 
     case "string": {
-      const text = node.toString().trim();
+      let text = node.toString().trim();
       if (node.quotes) {
-        return printString(text, options);
+        text = printString(text, options);
+      } else if (isWideKeywords(text)) {
+        text = text.toLowerCase();
       }
-      if (isWideKeywords(text)) {
-        return text.toLowerCase();
-      }
+      // TODO: Single-entry lists are parsed as strings, e.g. ('list')
+      // if (
+      //   node.parent.sassType === "parenthesized" &&
+      //   shouldPrintTrailingComma(options)
+      // ) {
+      //   text += ",";
+      // }
       return text;
     }
 
