@@ -673,15 +673,33 @@ function genericPrint(path, options, print) {
         "nodes",
       );
 
+      const isList = node.sassType === "list";
+      const isNestedList = Boolean(
+        isList && path.findAncestor((node) => node.sassType === "list"),
+      );
+
+      let separator = ",";
+      if (isList) {
+        switch (node.separator) {
+          case "/":
+            separator = " /";
+            break;
+          case ",":
+            separator = ",";
+            break;
+          default:
+            separator = "";
+        }
+      }
+
       // Handle lists without parentheses
-      if (node.sassType === "list" && parentNode.sassType !== "parenthesized") {
+      if (isList && parentNode.sassType !== "parenthesized") {
         // Handle empty lists
         if (node.nodes.length === 0) {
-          return ["()"];
+          return [node.brackets ? "[]" : "()"];
         }
         const forceHardLine = shouldBreakList(path);
         assertDocArray(nodeDocs);
-        const separator = (node.separator ?? "").trim();
         const isDirectChildOfEachRule = parentNode.sassType === "each-rule";
         const docs =
           isDirectChildOfEachRule && nodeDocs.length > 1
@@ -692,10 +710,29 @@ function genericPrint(path, options, print) {
         const doc = forceHardLine
           ? [hardline, parts]
           : group([parentNode.type === "decl" ? softline : "", fill(parts)]);
+        const openBracket = node.brackets
+          ? "[" + (node.raws?.afterOpen ?? "")
+          : "";
+        const closeBracket = node.brackets
+          ? "]" + (node.raws?.beforeClose ?? "")
+          : "";
+        const shouldBreak = isNestedList;
         if (isDirectChildOfEachRule) {
-          return [nodeDocs[0], separator, forceHardLine ? hardline : line, doc];
+          return group(
+            [
+              openBracket,
+              nodeDocs[0],
+              separator,
+              forceHardLine ? hardline : line,
+              doc,
+              closeBracket,
+            ],
+            { shouldBreak },
+          );
         }
-        return indent(doc);
+        return group([openBracket, indent(doc), closeBracket], {
+          shouldBreak,
+        });
       }
 
       // Handle parenthesized lists/maps/arguments
@@ -719,7 +756,12 @@ function genericPrint(path, options, print) {
             doc = group(dedent(doc));
           }
         }
-        const parts = [doc, isLast ? printTrailingComma(path, options) : ","];
+        const parts = [
+          doc,
+          isLast && separator === ","
+            ? printTrailingComma(path, options)
+            : separator,
+        ];
 
         // TODO: Is this still needed?
         // if (
@@ -746,6 +788,7 @@ function genericPrint(path, options, print) {
       );
       const shouldBreak =
         isInConfiguration ||
+        isNestedList ||
         ((isSCSSMap || isValue) && !isKey && !isInEachRule);
       // const shouldDedent =
       //   isInConfiguration || isKey || isInEachRule || isValue;
