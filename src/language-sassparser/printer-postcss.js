@@ -636,11 +636,26 @@ function genericPrint(path, options, print) {
           : printString('"' + node.url + '"', options),
       ]);
 
-    case "interpolation":
-      return path.map(
-        ({ node }) => (typeof node === "string" ? node : print()),
-        "nodes",
-      );
+    case "interpolation": {
+      const rawText = node.raws?.text;
+      const rawExpressions = node.raws?.expressions;
+      return path.map(({ node, index }) => {
+        if (typeof node === "string") {
+          const raw = rawText?.[index];
+          return raw?.value === node ? raw.raw : node;
+        }
+        const raw = rawExpressions?.[index];
+        // TODO: This seems like a bug in sass-parser:
+        // https://github.com/dart/dart-sass/blob/bce1f4c8b913126829ddea02eb1b968d3d3d3201/pkg/sass-parser/lib/src/interpolation.ts#L307-L324
+        return [
+          node.sassType !== "interpolated-function-call" ? "#{" : "",
+          raw?.before ?? "",
+          print(),
+          raw?.after ?? "",
+          node.sassType !== "interpolated-function-call" ? "}" : "",
+        ];
+      }, "nodes");
+    }
 
     case "map":
     case "parameter-list":
@@ -853,6 +868,9 @@ function genericPrint(path, options, print) {
             : ""),
         print("operand"),
       ]);
+
+    case "interpolated-function-call":
+      return group([print("name"), print("arguments")]);
 
     case "unknown":
       return node.value;
