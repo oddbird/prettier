@@ -846,7 +846,7 @@ function genericPrint(path, options, print) {
       // Only group the outermost binary operation
       // This ensures all operations in a chain break together
       const parentIsBinaryOp = path.parent.sassType === "binary-operation";
-      return parentIsBinaryOp ? parts : group(parts);
+      return parentIsBinaryOp ? parts : group(indent(parts));
     }
 
     case "parenthesized": {
