@@ -55,11 +55,11 @@ function isCommaGroup(node) {
     [
       "argument-list",
       "parameter-list",
-      "function-call",
       "map",
       "configuration",
       "parenthesized",
       // TODO: How aggressively should we break lists?
+      // "function-call",
       // "binary-operation",
     ].includes(node.sassType) ||
     isKeyValuePairNode(node) ||
