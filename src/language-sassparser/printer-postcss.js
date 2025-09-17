@@ -422,10 +422,8 @@ function genericPrint(path, options, print) {
           }
           break;
         case "mixin-rule":
-          if (isNonEmptyArray(node.parameters.nodes)) {
-            params.push(print("parameters"));
-            child = node.parameters;
-          }
+          params.push(print("parameters"));
+          child = node.parameters;
           break;
         case "return-rule":
           if (node.returnExpression) {
