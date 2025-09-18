@@ -17,13 +17,9 @@ import printString from "../utils/print-string.js";
 import UnexpectedNodeError from "../utils/unexpected-node-error.js";
 import embed from "./embed.js";
 import getVisitorKeys from "./get-visitor-keys.js";
-import { locEnd, locStart } from "./loc.js";
+import { locEnd } from "./loc.js";
 import { insertPragma } from "./pragma.js";
-import {
-  printCssNumber,
-  printUnit,
-  shouldPrintTrailingComma,
-} from "./print/misc.js";
+import { printCssNumber, printTrailingComma, printUnit } from "./print/misc.js";
 import printSequence from "./print/sequence.js";
 import { chunk } from "./utils/chunk.js";
 import {
@@ -32,147 +28,17 @@ import {
   insideICSSRuleNode,
   isDetachedRulesetCallNode,
   isDetachedRulesetDeclarationNode,
+  isInMap,
+  isKeyValuePairNode,
   isSCSSControlDirectiveNode,
   isTemplatePlaceholderNode,
   isTemplatePropNode,
-  isVarFunctionNode,
   isWideKeywords,
   lastLineHasInlineComment,
   maybeToLowerCase,
+  serializeMemberList,
+  shouldBreakList,
 } from "./utils/index.js";
-
-function isKeyValuePairNode(node) {
-  return (
-    node.sassType === "map-entry" ||
-    node.sassType === "configured-variable" ||
-    (node.sassType === "argument" && Boolean(node.name)) ||
-    (node.sassType === "parameter" && Boolean(node.defaultValue))
-  );
-}
-
-function isCommaGroup(node) {
-  return (
-    [
-      "argument-list",
-      "parameter-list",
-      "map",
-      "configuration",
-      "parenthesized",
-      // TODO: How aggressively should we break lists?
-      // "function-call",
-      // "binary-operation",
-    ].includes(node.sassType) ||
-    isKeyValuePairNode(node) ||
-    (node.sassType === "list" && [",", "/"].includes(node.separator))
-  );
-}
-
-function shouldBreakList(path) {
-  return path.match(
-    (node) => node.some?.(isCommaGroup),
-    (node, key) =>
-      key === "expression" &&
-      ((node.type === "decl" && !node.prop.startsWith("--")) ||
-        (node.type === "atrule" && node.variable)),
-  );
-}
-
-function hasComma({ node, parent }, options) {
-  return Boolean(
-    node.source &&
-      options.originalText
-        .slice(locStart(node), locStart(parent.close))
-        .trimEnd()
-        .endsWith(","),
-  );
-}
-
-function printTrailingComma(path, options) {
-  if (isVarFunctionNode(path.grandparent) && hasComma(path, options)) {
-    return ",";
-  }
-  if (
-    path.node.type !== "comment" &&
-    shouldPrintTrailingComma(options) &&
-    path.callParent(
-      () => path.node.sassType === "map" || path.node.sassType === "list",
-    )
-  ) {
-    return ifBreak(",");
-  }
-
-  return "";
-}
-
-function setsEqual(set1, set2) {
-  if (set1 === set2) {
-    return true;
-  }
-  if (set1.size !== set2.size) {
-    return false;
-  }
-  for (const element of set1) {
-    if (!set2.has(element)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function memberListsEqual(list1, list2) {
-  if (list1 === list2) {
-    return true;
-  }
-  if (!list1 || !list2) {
-    return false;
-  }
-  return (
-    setsEqual(list1.mixinsAndFunctions, list2.mixinsAndFunctions) &&
-    setsEqual(list1.variables, list2.variables)
-  );
-}
-
-function serializeMemberList(keyword, members, raws) {
-  if (memberListsEqual(members, raws?.value)) {
-    return raws.raw;
-  }
-  const mixinsAndFunctionsEmpty = members.mixinsAndFunctions.size === 0;
-  const variablesEmpty = members.variables.size === 0;
-  if (mixinsAndFunctionsEmpty && variablesEmpty) {
-    return "";
-  }
-
-  // TODO: This will re-order the members
-  const allItems = [
-    ...members.mixinsAndFunctions,
-    ...[...members.variables].map((variable) => `$${variable}`),
-  ];
-
-  if (allItems.length === 1) {
-    return indent([line, keyword, " ", allItems[0]]);
-  }
-
-  return group(
-    indent([
-      indent([line, keyword, " ", allItems[0], ","]),
-      line,
-      fill(join(line, chunk(join(",", allItems.slice(1)), 2))),
-    ]),
-  );
-}
-
-function isInMap(path) {
-  const hasParens = path.parent.sassType === "parenthesized";
-  const mapNode = hasParens ? path.grandparent : path.parent;
-  const childNode = hasParens ? path.parent : path.node;
-  if (mapNode.sassType !== "map-entry") {
-    return { isKey: false, isValue: false };
-  }
-  return {
-    isKey: mapNode.key === childNode,
-    isValue: mapNode.value === childNode,
-  };
-}
 
 function genericPrint(path, options, print) {
   const { node } = path;

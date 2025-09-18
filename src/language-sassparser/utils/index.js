@@ -1,48 +1,10 @@
-const colorAdjusterFunctions = new Set([
-  "red",
-  "green",
-  "blue",
-  "alpha",
-  "a",
-  "rgb",
-  "hue",
-  "h",
-  "saturation",
-  "s",
-  "lightness",
-  "l",
-  "whiteness",
-  "w",
-  "blackness",
-  "b",
-  "tint",
-  "shade",
-  "blend",
-  "blenda",
-  "contrast",
-  "hsl",
-  "hsla",
-  "hwb",
-  "hwba",
-]);
-
-function getPropOfDeclNode(path) {
-  return path.findAncestor((node) => node.type === "decl")?.prop?.toLowerCase();
-}
+import { fill, group, indent, join, line } from "../../document/builders.js";
+import { locStart } from "../loc.js";
+import { chunk } from "./chunk.js";
 
 const wideKeywords = new Set(["initial", "inherit", "unset", "revert"]);
 function isWideKeywords(value) {
   return wideKeywords.has(value.toLowerCase());
-}
-
-function isKeyframeAtRuleKeywords(path, value) {
-  const atRuleAncestorNode = path.findAncestor(
-    (node) => node.type === "atrule",
-  );
-  return (
-    atRuleAncestorNode?.name?.toLowerCase().endsWith("keyframes") &&
-    ["from", "to"].includes(value.toLowerCase())
-  );
 }
 
 function maybeToLowerCase(value) {
@@ -57,13 +19,6 @@ function maybeToLowerCase(value) {
     : value.toLowerCase();
 }
 
-function insideValueFunctionNode(path, functionName) {
-  const funcAncestorNode = path.findAncestor(
-    (node) => node.type === "value-func",
-  );
-  return funcAncestorNode?.value?.toLowerCase() === functionName;
-}
-
 function insideICSSRuleNode(path) {
   const ruleAncestorNode = path.findAncestor((node) => node.type === "rule");
   const selector = ruleAncestorNode?.selector;
@@ -72,33 +27,6 @@ function insideICSSRuleNode(path) {
     selector &&
     (selector.startsWith(":import") || selector.startsWith(":export"))
   );
-}
-
-function insideAtRuleNode(path, atRuleNameOrAtRuleNames) {
-  const atRuleNames = Array.isArray(atRuleNameOrAtRuleNames)
-    ? atRuleNameOrAtRuleNames
-    : [atRuleNameOrAtRuleNames];
-  const atRuleAncestorNode = path.findAncestor(
-    (node) => node.type === "atrule",
-  );
-
-  return (
-    atRuleAncestorNode &&
-    atRuleNames.includes(atRuleAncestorNode.name.toLowerCase())
-  );
-}
-
-function insideURLFunctionInImportAtRuleNode(path) {
-  const { node } = path;
-  return (
-    node.groups[0]?.value === "url" &&
-    node.groups.length === 2 &&
-    path.findAncestor((node) => node.type === "atrule")?.name === "import"
-  );
-}
-
-function isURLFunctionNode(node) {
-  return node.sassType === "function-call" && node.name.toLowerCase() === "url";
 }
 
 function isVarFunctionNode(node) {
@@ -121,63 +49,6 @@ function isDetachedRulesetDeclarationNode(node) {
   );
 }
 
-function isForKeywordNode(node) {
-  return (
-    node.type === "value-word" &&
-    ["from", "through", "end"].includes(node.value)
-  );
-}
-
-function isIfElseKeywordNode(node) {
-  return (
-    node.type === "value-word" && ["and", "or", "not"].includes(node.value)
-  );
-}
-
-function isEachKeywordNode(node) {
-  return node.type === "value-word" && node.value === "in";
-}
-
-function isMultiplicationNode(node) {
-  return node.type === "value-operator" && node.value === "*";
-}
-
-function isDivisionNode(node) {
-  return node.type === "value-operator" && node.value === "/";
-}
-
-function isAdditionNode(node) {
-  return node.type === "value-operator" && node.value === "+";
-}
-
-function isSubtractionNode(node) {
-  return node.type === "value-operator" && node.value === "-";
-}
-
-function isModuloNode(node) {
-  return node.type === "value-operator" && node.value === "%";
-}
-
-function isMathOperatorNode(node) {
-  return (
-    isMultiplicationNode(node) ||
-    isDivisionNode(node) ||
-    isAdditionNode(node) ||
-    isSubtractionNode(node) ||
-    isModuloNode(node)
-  );
-}
-
-function isEqualityOperatorNode(node) {
-  return node.type === "value-word" && ["==", "!="].includes(node.value);
-}
-
-function isRelationalOperatorNode(node) {
-  return (
-    node.type === "value-word" && ["<", ">", "<=", ">="].includes(node.value)
-  );
-}
-
 function isSCSSControlDirectiveNode(node) {
   return (
     node.type === "atrule" &&
@@ -197,15 +68,6 @@ function isTemplatePropNode(node) {
   return node.prop.startsWith("@prettier-placeholder");
 }
 
-function isPostcssSimpleVarNode(currentNode, nextNode) {
-  return (
-    currentNode.value === "$$" &&
-    currentNode.type === "value-func" &&
-    nextNode?.type === "value-word" &&
-    !nextNode.raws.before
-  );
-}
-
 function hasComposesNode(node) {
   return node.prop.toLowerCase() === "composes";
 }
@@ -216,202 +78,145 @@ function hasParensAroundNode(node) {
   );
 }
 
-function hasEmptyRawBefore(node) {
-  return node.raws?.before === "";
-}
-
-function isKeyValuePairNode(node) {
-  return (
-    node.type === "value-comma_group" &&
-    node.groups?.[1]?.type === "value-colon"
-  );
-}
-
-function isKeyValuePairInParenGroupNode(node) {
-  return (
-    node.type === "value-paren_group" &&
-    node.groups?.[0] &&
-    isKeyValuePairNode(node.groups[0])
-  );
-}
-
-function isSCSSMapItemNode(path, options) {
-  if (options.parser !== "sassparser") {
-    return false;
-  }
-
-  const { node } = path;
-
-  // Ignore empty item (i.e. `$key: ()`)
-  if (node.groups.length === 0) {
-    return false;
-  }
-
-  const parentParentNode = path.grandparent;
-
-  // Check open parens contain key/value pair (i.e. `(key: value)` and `(key: (value, other-value)`)
-  if (
-    !isKeyValuePairInParenGroupNode(node) &&
-    !(parentParentNode && isKeyValuePairInParenGroupNode(parentParentNode))
-  ) {
-    return false;
-  }
-
-  const declNode = path.findAncestor((node) => node.type === "decl");
-
-  // SCSS map declaration (i.e. `$map: (key: value, other-key: other-value)`)
-  if (declNode?.prop?.startsWith("$")) {
-    return true;
-  }
-
-  // List as value of key inside SCSS map (i.e. `$map: (key: (value other-value other-other-value))`)
-  if (isKeyValuePairInParenGroupNode(parentParentNode)) {
-    return true;
-  }
-
-  // SCSS Map is argument of function (i.e. `func((key: value, other-key: other-value))`)
-  if (parentParentNode.type === "value-func") {
-    return true;
-  }
-
-  return false;
-}
-
-function isInlineValueCommentNode(node) {
-  return node.type === "comment" && node.sassType === "sass-comment";
-}
-
-function isHashNode(node) {
-  return node.type === "value-word" && node.value === "#";
-}
-
-function isLeftCurlyBraceNode(node) {
-  return node.type === "value-word" && node.value === "{";
-}
-
-function isRightCurlyBraceNode(node) {
-  return node.type === "value-word" && node.value === "}";
-}
-
-function isWordNode(node) {
-  return ["value-word", "value-atword"].includes(node.type);
-}
-
-function isColonNode(node) {
-  return node?.type === "value-colon";
-}
-
-function isKeyInValuePairNode(node, parentNode) {
-  if (!isKeyValuePairNode(parentNode)) {
-    return false;
-  }
-
-  const { groups } = parentNode;
-  const index = groups.indexOf(node);
-
-  /* c8 ignore next 3 */
-  if (index === -1) {
-    return false;
-  }
-
-  return isColonNode(groups[index + 1]);
-}
-
-function isMediaAndSupportsKeywords(node) {
-  return node.value && ["not", "and", "or"].includes(node.value.toLowerCase());
-}
-
-function isColorAdjusterFuncNode(node) {
-  if (node.type !== "value-func") {
-    return false;
-  }
-
-  return colorAdjusterFunctions.has(node.value.toLowerCase());
-}
-
 function lastLineHasInlineComment(text) {
   return /\/\//u.test(text.split(/[\n\r]/u).pop());
 }
 
-function isAtWordPlaceholderNode(node) {
+function isKeyValuePairNode(node) {
   return (
-    node?.type === "value-atword" &&
-    node.value.startsWith("prettier-placeholder-")
+    node.sassType === "map-entry" ||
+    node.sassType === "configured-variable" ||
+    (node.sassType === "argument" && Boolean(node.name)) ||
+    (node.sassType === "parameter" && Boolean(node.defaultValue))
   );
 }
 
-function isConfigurationNode(node, parentNode) {
-  if (
-    node.open?.value !== "(" ||
-    node.close?.value !== ")" ||
-    node.groups.some((group) => group.type !== "value-comma_group")
-  ) {
+function isCommaGroup(node) {
+  return (
+    [
+      "argument-list",
+      "parameter-list",
+      "map",
+      "configuration",
+      "parenthesized",
+      // TODO: How aggressively should we break lists?
+      // "function-call",
+      // "binary-operation",
+    ].includes(node.sassType) ||
+    isKeyValuePairNode(node) ||
+    (node.sassType === "list" && [",", "/"].includes(node.separator))
+  );
+}
+
+function shouldBreakList(path) {
+  return path.match(
+    (node) => node.some?.(isCommaGroup),
+    (node, key) =>
+      key === "expression" &&
+      ((node.type === "decl" && !node.prop.startsWith("--")) ||
+        (node.type === "atrule" && node.variable)),
+  );
+}
+
+function hasComma({ node, parent }, options) {
+  return Boolean(
+    node.source &&
+      options.originalText
+        .slice(locStart(node), locStart(parent.close))
+        .trimEnd()
+        .endsWith(","),
+  );
+}
+
+function setsEqual(set1, set2) {
+  if (set1 === set2) {
+    return true;
+  }
+  if (set1.size !== set2.size) {
     return false;
   }
-  if (parentNode.type === "value-comma_group") {
-    const prevIdx = parentNode.groups.indexOf(node) - 1;
-    const maybeWithNode = parentNode.groups[prevIdx];
-    if (
-      maybeWithNode?.type === "value-word" &&
-      maybeWithNode.value === "with"
-    ) {
-      return true;
+  for (const element of set1) {
+    if (!set2.has(element)) {
+      return false;
     }
   }
-  return false;
+  return true;
 }
 
-function isParenGroupNode(node) {
+function memberListsEqual(list1, list2) {
+  if (list1 === list2) {
+    return true;
+  }
+  if (!list1 || !list2) {
+    return false;
+  }
   return (
-    node.type === "value-paren_group" &&
-    node.open?.value === "(" &&
-    node.close?.value === ")"
+    setsEqual(list1.mixinsAndFunctions, list2.mixinsAndFunctions) &&
+    setsEqual(list1.variables, list2.variables)
   );
+}
+
+function serializeMemberList(keyword, members, raws) {
+  if (memberListsEqual(members, raws?.value)) {
+    return raws.raw;
+  }
+  const mixinsAndFunctionsEmpty = members.mixinsAndFunctions.size === 0;
+  const variablesEmpty = members.variables.size === 0;
+  if (mixinsAndFunctionsEmpty && variablesEmpty) {
+    return "";
+  }
+
+  // TODO: This will re-order the members
+  const allItems = [
+    ...members.mixinsAndFunctions,
+    ...[...members.variables].map((variable) => `$${variable}`),
+  ];
+
+  if (allItems.length === 1) {
+    return indent([line, keyword, " ", allItems[0]]);
+  }
+
+  return group(
+    indent([
+      indent([line, keyword, " ", allItems[0], ","]),
+      line,
+      fill(join(line, chunk(join(",", allItems.slice(1)), 2))),
+    ]),
+  );
+}
+
+function isInMap(path) {
+  const hasParens = path.parent.sassType === "parenthesized";
+  const mapNode = hasParens ? path.grandparent : path.parent;
+  const childNode = hasParens ? path.parent : path.node;
+  if (mapNode.sassType !== "map-entry") {
+    return { isKey: false, isValue: false };
+  }
+  return {
+    isKey: mapNode.key === childNode,
+    isValue: mapNode.value === childNode,
+  };
 }
 
 export {
-  getPropOfDeclNode,
+  hasComma,
   hasComposesNode,
-  hasEmptyRawBefore,
   hasParensAroundNode,
-  insideAtRuleNode,
   insideICSSRuleNode,
-  insideURLFunctionInImportAtRuleNode,
-  insideValueFunctionNode,
-  isAdditionNode,
-  isAtWordPlaceholderNode,
-  isColonNode,
-  isColorAdjusterFuncNode,
-  isConfigurationNode,
+  isCommaGroup,
   isDetachedRulesetCallNode,
   isDetachedRulesetDeclarationNode,
-  isDivisionNode,
-  isEachKeywordNode,
-  isEqualityOperatorNode,
-  isForKeywordNode,
-  isHashNode,
-  isIfElseKeywordNode,
-  isInlineValueCommentNode,
-  isKeyframeAtRuleKeywords,
-  isKeyInValuePairNode,
+  isInMap,
   isKeyValuePairNode,
-  isLeftCurlyBraceNode,
-  isMathOperatorNode,
-  isMediaAndSupportsKeywords,
-  isMultiplicationNode,
-  isParenGroupNode,
-  isPostcssSimpleVarNode,
-  isRelationalOperatorNode,
-  isRightCurlyBraceNode,
   isSCSSControlDirectiveNode,
-  isSCSSMapItemNode,
-  isSubtractionNode,
   isTemplatePlaceholderNode,
   isTemplatePropNode,
-  isURLFunctionNode,
   isVarFunctionNode,
   isWideKeywords,
-  isWordNode,
   lastLineHasInlineComment,
   maybeToLowerCase,
+  memberListsEqual,
+  serializeMemberList,
+  setsEqual,
+  shouldBreakList,
 };
